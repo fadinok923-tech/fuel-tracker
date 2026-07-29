@@ -1,0 +1,268 @@
+// Fleet Fuel & Mileage Management System
+// Schema designed to scale from 4 to 20+ vehicles without structural changes
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =================== USER & AUTH ===================
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String   // hashed
+  role      Role     @default(MANAGER)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  auditLogs AuditLog[]
+  fuelEntries FuelEntry[]
+  trips     Trip[]
+  maintenance Maintenance[]
+
+  @@index([email])
+  @@index([role])
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  DRIVER
+  READ_ONLY
+}
+
+// =================== VEHICLE ===================
+model Vehicle {
+  id              String   @id @default(cuid())
+  vehicleNumber   String   @unique
+  plateNumber     String   @unique
+  vehicleName     String
+  brand           String
+  model           String
+  year            Int
+  fuelType        FuelType @default(PETROL)
+  tankCapacity    Float    // liters
+  status          VehicleStatus @default(ACTIVE)
+  insuranceExpiry DateTime?
+  registrationExpiry DateTime?
+  purchaseDate    DateTime?
+  purchasePrice   Float?
+  currentOdometer Float    @default(0)
+  notes           String?
+
+  // maintenance scheduling thresholds (km or days)
+  oilChangeKmInterval Float  @default(5000)
+  lastOilChangeKm     Float?
+  serviceKmInterval   Float  @default(10000)
+  lastServiceKm       Float?
+  tyreKmInterval      Float  @default(40000)
+  lastTyreChangeKm    Float?
+  batteryIntervalDays Int    @default(730)
+  lastBatteryChange   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  assignedDriver Driver? @relation("VehicleDriver")
+
+  fuelEntries   FuelEntry[]
+  trips         Trip[]
+  maintenance   Maintenance[]
+
+  @@index([status])
+  @@index([vehicleNumber])
+  @@index([plateNumber])
+}
+
+enum FuelType {
+  PETROL
+  DIESEL
+  HYBRID
+  ELECTRIC
+}
+
+enum VehicleStatus {
+  ACTIVE
+  IN_SERVICE
+  IDLE
+  RETIRED
+}
+
+// =================== DRIVER ===================
+model Driver {
+  id            String   @id @default(cuid())
+  name          String
+  mobile        String
+  licenseNumber String   @unique
+  licenseExpiry DateTime?
+  status        DriverStatus @default(ACTIVE)
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  assignedVehicleId String? @unique
+  assignedVehicle   Vehicle? @relation("VehicleDriver", fields: [assignedVehicleId], references: [id])
+
+  fuelEntries FuelEntry[]
+  trips       Trip[]
+
+  @@index([name])
+  @@index([licenseNumber])
+}
+
+enum DriverStatus {
+  ACTIVE
+  ON_LEAVE
+  INACTIVE
+}
+
+// =================== FUEL ENTRY ===================
+model FuelEntry {
+  id              String   @id @default(cuid())
+  date            DateTime @default(now())
+  vehicleId       String
+  driverId        String?
+  odometer        Float    // current odometer reading
+  previousOdometer Float?  // cached at creation time
+  distance        Float?   // computed: odometer - previousOdometer
+  liters          Float
+  pricePerLiter   Float
+  totalCost       Float    // computed: liters * pricePerLiter
+  fuelStation     String?
+  invoiceNumber   String?
+  paymentMethod   PaymentMethod @default(CASH)
+  notes           String?
+  receiptImage    String?  // base64 or URL
+
+  // derived metrics (cached for fast queries)
+  kmPerLiter      Float?
+  costPerKm       Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  driver  Driver? @relation(fields: [driverId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+  userId  String?
+
+  @@index([vehicleId, date])
+  @@index([driverId])
+  @@index([date])
+  @@index([invoiceNumber])
+  @@index([fuelStation])
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  FLEET_CARD
+  UPI
+  OTHER
+}
+
+// =================== TRIP ===================
+model Trip {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  vehicleId   String
+  driverId    String?
+  startKm     Float
+  endKm       Float
+  distance    Float    // computed: endKm - startKm
+  purpose     String?
+  customer    String?
+  startLocation String?
+  endLocation   String?
+  timeOut     DateTime?
+  timeIn      DateTime?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  driver  Driver? @relation(fields: [driverId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+  userId  String?
+
+  @@index([vehicleId, date])
+  @@index([driverId])
+  @@index([date])
+  @@index([customer])
+}
+
+// =================== MAINTENANCE ===================
+model Maintenance {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  vehicleId   String
+  expenseType MaintenanceType
+  amount      Float
+  workshop    String?
+  invoiceNumber String?
+  notes       String?
+  invoiceImage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+  userId  String?
+
+  @@index([vehicleId, date])
+  @@index([expenseType])
+  @@index([date])
+}
+
+enum MaintenanceType {
+  OIL_CHANGE
+  TYRES
+  BATTERY
+  BRAKE_SERVICE
+  INSURANCE
+  REGISTRATION
+  REPAIRS
+  UNEXPECTED
+  OTHER
+}
+
+// =================== AUDIT LOG ===================
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String   // CREATE, UPDATE, DELETE, LOGIN, LOGOUT
+  entity    String   // Vehicle, Driver, FuelEntry, Trip, Maintenance, User
+  entityId  String?
+  details   String?  // JSON snapshot
+  timestamp DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([timestamp])
+}
+
+// =================== SETTINGS ===================
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+  updatedAt DateTime @updatedAt
+}
