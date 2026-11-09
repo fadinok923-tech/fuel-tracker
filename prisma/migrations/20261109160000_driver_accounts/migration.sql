@@ -13,13 +13,19 @@ ALTER TABLE "Driver"
 
 -- Preserve access for previously seeded driver users and link matching profiles.
 UPDATE "User"
-SET "username" = lower(split_part("email", '@', 1))
-WHERE "role" = 'DRIVER' AND "username" IS NULL AND "email" IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM "User" AS other
-    WHERE lower(other."username") = lower(split_part("User"."email", '@', 1))
-      AND other."id" <> "User"."id"
-  );
+SET "username" = CASE
+  WHEN (
+    SELECT COUNT(*)
+    FROM "User" AS same_prefix
+    WHERE same_prefix."role" = 'DRIVER'
+      AND same_prefix."username" IS NULL
+      AND same_prefix."email" IS NOT NULL
+      AND lower(split_part(same_prefix."email", '@', 1)) = lower(split_part("User"."email", '@', 1))
+  ) > 1
+  THEN lower(split_part("email", '@', 1)) || '-' || left("id", 6)
+  ELSE lower(split_part("email", '@', 1))
+END
+WHERE "role" = 'DRIVER' AND "username" IS NULL AND "email" IS NOT NULL;
 
 UPDATE "Driver" AS d
 SET "userId" = u."id"
