@@ -53,12 +53,13 @@ if (process.env.VERCEL_ENV === 'production') {
       const migrations = await prisma.$queryRaw`
         SELECT migration_name AS name
         FROM public._prisma_migrations
-        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
       `
-      if (migrations.length === 0) {
-        run('prisma', ['migrate', 'resolve', '--applied', '20261109130000_init'], migrationEnv)
-      } else if (!migrations.some((migration) => migration.name === '20261109130000_init')) {
-        throw new Error('The database has a different migration history; stopping before schema changes.')
+      if (!migrations.some((migration) => migration.name === '20261109130000_init')) {
+        if (migrations.length === 0) {
+          run('prisma', ['migrate', 'resolve', '--applied', '20261109130000_init'], migrationEnv)
+        } else {
+          throw new Error('The database has a different migration history; stopping before schema changes.')
+        }
       }
     } else if (Number(tableCount) > 0) {
       run('prisma', ['migrate', 'resolve', '--applied', '20261109130000_init'], migrationEnv)
