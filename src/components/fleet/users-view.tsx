@@ -15,7 +15,7 @@ import { api, fmtDate } from '@/lib/fleet'
 import { Shield, Plus, Edit, Trash2, UserCog } from 'lucide-react'
 import { toast } from 'sonner'
 
-const ROLES: Role[] = ['ADMIN', 'MANAGER', 'DRIVER', 'READ_ONLY']
+const ROLES: Role[] = ['ADMIN', 'MANAGER', 'READ_ONLY']
 
 const ROLE_PERMISSIONS_MATRIX = [
   { role: 'ADMIN' as Role, views: 'All 12 views', edit: true, delete: true, manage: true },
@@ -108,6 +108,7 @@ export function UsersView() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Username</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
@@ -119,7 +120,8 @@ export function UsersView() {
                 {users.map(u => (
                   <TableRow key={u.id}>
                     <TableCell className="font-medium">{u.name}</TableCell>
-                    <TableCell className="text-sm">{u.email}</TableCell>
+                    <TableCell className="text-sm">{u.username || '—'}</TableCell>
+                    <TableCell className="text-sm">{u.email || '—'}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={
                         u.role === 'ADMIN' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-400' :
@@ -135,8 +137,10 @@ export function UsersView() {
                     {canManage && (
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" onClick={() => openEdit(u)}><Edit className="size-3.5" /></Button>
-                          <Button size="icon" variant="ghost" onClick={() => remove(u)} className="text-rose-600"><Trash2 className="size-3.5" /></Button>
+                          {u.role === 'DRIVER' ? <span className="px-2 text-xs text-muted-foreground">Manage in Drivers</span> : <>
+                            <Button size="icon" variant="ghost" onClick={() => openEdit(u)}><Edit className="size-3.5" /></Button>
+                            <Button size="icon" variant="ghost" onClick={() => remove(u)} className="text-rose-600"><Trash2 className="size-3.5" /></Button>
+                          </>}
                         </div>
                       </TableCell>
                     )}
@@ -153,7 +157,7 @@ export function UsersView() {
           <DialogHeader><DialogTitle className="flex items-center gap-2"><UserCog className="size-4" /> {editing ? 'Edit User' : 'Add User'}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5"><Label className="text-xs">Full Name *</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label className="text-xs">Email *</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Email *</Label><Input type="email" value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">{editing ? 'New Password (leave blank to keep)' : 'Password *'}</Label><Input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Role</Label>
               <Select value={form.role} onValueChange={v => setForm({ ...form, role: v })}>

@@ -5,11 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Bell, Menu, Moon, Sun, Search, LogOut, User as UserIcon, RefreshCw, ChevronDown } from 'lucide-react'
+import { Bell, Menu, Moon, Sun, Search, LogOut, User as UserIcon, ChevronDown } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useState, useEffect } from 'react'
 import { api } from '@/lib/fleet'
-import { toast } from 'sonner'
 
 const VIEW_TITLES: Record<string, { title: string; subtitle: string }> = {
   dashboard: { title: 'Dashboard', subtitle: 'Real-time fleet overview and KPIs' },
@@ -31,24 +30,10 @@ export function Header({ onMenuClick, alertsCount }: { onMenuClick: () => void; 
   const { view, setView, searchQuery, setSearchQuery } = useUI()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  const [reseeding, setReseeding] = useState(false)
 
   useEffect(() => setMounted(true), [])
 
   const meta = VIEW_TITLES[view] || { title: 'Fleet', subtitle: '' }
-
-  const reseed = async () => {
-    setReseeding(true)
-    try {
-      await api('/api/seed', { method: 'POST' })
-      toast.success('Demo data re-seeded. Reloading…')
-      setTimeout(() => window.location.reload(), 800)
-    } catch (e: any) {
-      toast.error(e.message)
-    } finally {
-      setReseeding(false)
-    }
-  }
 
   return (
     <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border">
@@ -88,11 +73,6 @@ export function Header({ onMenuClick, alertsCount }: { onMenuClick: () => void; 
           {mounted && theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
         </Button>
 
-        {/* Reseed */}
-        <Button variant="ghost" size="icon" onClick={reseed} disabled={reseeding} title="Re-seed demo data">
-          <RefreshCw className={`size-4 ${reseeding ? 'animate-spin' : ''}`} />
-        </Button>
-
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -113,7 +93,7 @@ export function Header({ onMenuClick, alertsCount }: { onMenuClick: () => void; 
             <DropdownMenuLabel>
               <div className="flex flex-col">
                 <span className="text-sm font-medium">{user?.name}</span>
-                <span className="text-xs text-muted-foreground">{user?.email}</span>
+                <span className="text-xs text-muted-foreground">{user?.username || user?.email}</span>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -121,7 +101,7 @@ export function Header({ onMenuClick, alertsCount }: { onMenuClick: () => void; 
               <UserIcon className="size-3.5 mr-2" /> Role: {user ? ROLE_LABELS[user.role] : ''}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => { logout(); }} className="text-rose-600 focus:text-rose-700">
+            <DropdownMenuItem onClick={async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); logout() }} className="text-rose-600 focus:text-rose-700">
               <LogOut className="size-3.5 mr-2" /> Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>

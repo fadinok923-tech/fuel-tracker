@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 // GET /api/reports?type=vehicle|driver|fuel|maintenance|trip&...filters
 export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user)) return forbiddenResponse()
   const { searchParams } = new URL(req.url)
   const type = searchParams.get('type') || 'vehicle'
   const from = searchParams.get('from')

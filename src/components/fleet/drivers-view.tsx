@@ -9,18 +9,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuth, useUI } from '@/lib/store'
-import { PERMISSIONS } from '@/lib/types'
 import { api, fmtDate, daysUntil, DRIVER_STATUS_COLORS } from '@/lib/fleet'
 import { Users, Plus, Edit, Trash2, Phone, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
 const STATUSES = ['ACTIVE', 'ON_LEAVE', 'INACTIVE']
-const empty = { name: '', mobile: '', licenseNumber: '', licenseExpiry: '', status: 'ACTIVE', notes: '', assignedVehicleId: '' }
+const empty = { name: '', mobile: '', licenseNumber: '', licenseExpiry: '', status: 'ACTIVE', notes: '', assignedVehicleId: '', username: '', password: '' }
 
 export function DriversView() {
   const { user } = useAuth()
   const { searchQuery } = useUI()
-  const canEdit = user ? PERMISSIONS[user.role].canEdit : false
+  const canEdit = user?.role === 'ADMIN'
 
   const [drivers, setDrivers] = useState<any[]>([])
   const [vehicles, setVehicles] = useState<any[]>([])
@@ -45,12 +44,15 @@ export function DriversView() {
   const openAdd = () => { setEditing(null); setForm(empty); setModalOpen(true) }
   const openEdit = (d: any) => {
     setEditing(d)
-    setForm({ ...empty, ...d, licenseExpiry: d.licenseExpiry ? d.licenseExpiry.split('T')[0] : '', assignedVehicleId: d.assignedVehicleId || '' })
+    setForm({ ...empty, ...d, licenseExpiry: d.licenseExpiry ? d.licenseExpiry.split('T')[0] : '', assignedVehicleId: d.assignedVehicleId || '', username: d.user?.username || '', password: '' })
     setModalOpen(true)
   }
 
   const save = async () => {
     try {
+      if (!editing && (!form.username || !form.password)) { toast.error('Create a username and password for this driver'); return }
+      if (editing && !editing.user?.id && (!form.username || !form.password)) { toast.error('Create a username and password for this driver'); return }
+      if (editing && editing.user?.id && !form.username) { toast.error('A driver username is required'); return }
       const payload = { ...form, userId: user?.id }
       if (editing) {
         await api(`/api/drivers/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) })
@@ -103,6 +105,7 @@ export function DriversView() {
                     <TableHead>License Expiry</TableHead>
                     <TableHead>Assigned Vehicle</TableHead>
                     <TableHead>Status</TableHead>
+                    {canEdit && <TableHead>Driver Login</TableHead>}
                     {canEdit && <TableHead></TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -132,6 +135,7 @@ export function DriversView() {
                         <TableCell>
                           <span className={`text-[10px] font-medium px-2 py-1 rounded-full ${DRIVER_STATUS_COLORS[d.status] || ''}`}>{d.status.replace('_', ' ')}</span>
                         </TableCell>
+                        {canEdit && <TableCell className="text-xs">{d.user?.username ? <span className={d.user.active ? 'text-emerald-600' : 'text-rose-600'}>{d.user.username} · {d.user.active ? 'active' : 'inactive'}</span> : <span className="text-amber-600">No login</span>}</TableCell>}
                         {canEdit && (
                           <TableCell>
                             <div className="flex gap-1">
@@ -171,6 +175,11 @@ export function DriversView() {
               </Select>
             </div>
             <div className="space-y-1.5 col-span-2"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+            {canEdit && <>
+              <div className="space-y-1.5"><Label className="text-xs">Driver Username *</Label><Input value={form.username || ''} onChange={e => setForm({ ...form, username: e.target.value })} autoComplete="off" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">{editing ? 'Set new password (leave blank to keep)' : 'Password *'}</Label><Input type="password" value={form.password || ''} onChange={e => setForm({ ...form, password: e.target.value })} autoComplete="new-password" /></div>
+              <p className="col-span-2 text-xs text-muted-foreground">Each driver receives a unique username and password. Setting status to Inactive disables this login.</p>
+            </>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>

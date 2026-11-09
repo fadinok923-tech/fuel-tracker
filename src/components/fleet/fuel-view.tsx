@@ -21,7 +21,8 @@ const today = () => new Date().toISOString().split('T')[0]
 export function FuelView() {
   const { user } = useAuth()
   const { searchQuery } = useUI()
-  const canEdit = user ? PERMISSIONS[user.role].canEdit : false
+  const canCreate = user ? PERMISSIONS[user.role].canEdit : false
+  const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER'
 
   const [entries, setEntries] = useState<any[]>([])
   const [vehicles, setVehicles] = useState<any[]>([])
@@ -120,7 +121,7 @@ export function FuelView() {
 
       <div className="flex items-center justify-between gap-3">
         <Badge variant="outline" className="bg-muted/40">{filtered.length} entries</Badge>
-        {canEdit && (
+        {canCreate && (
           <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700">
             <Plus className="size-4 mr-1" /> Add Fuel Entry
           </Button>
@@ -152,6 +153,7 @@ export function FuelView() {
                     <TableHead className="text-right">Cost/KM</TableHead>
                     <TableHead>Station</TableHead>
                     <TableHead>Invoice</TableHead>
+                    <TableHead>Receipt</TableHead>
                     {canEdit && <TableHead></TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -172,6 +174,7 @@ export function FuelView() {
                       <TableCell className="text-right font-mono text-xs">{e.costPerKm ? e.costPerKm.toFixed(3) : '—'}</TableCell>
                       <TableCell className="text-xs max-w-[160px] truncate" title={e.fuelStation}>{e.fuelStation || '—'}</TableCell>
                       <TableCell className="font-mono text-xs">{e.invoiceNumber || '—'}</TableCell>
+                      <TableCell className="text-xs">{e.receiptImage ? <a className="text-emerald-700 underline" href={e.receiptImage} target="_blank" rel="noreferrer">Open</a> : '—'}</TableCell>
                       {canEdit && (
                         <TableCell>
                           <div className="flex gap-1">
@@ -224,6 +227,14 @@ export function FuelView() {
               <Select value={form.paymentMethod} onValueChange={v => setForm({ ...form, paymentMethod: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m.replace('_', ' ')}</SelectItem>)}</SelectContent></Select>
             </div>
             <div className="space-y-1.5"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+            <div className="space-y-1.5 col-span-2"><Label className="text-xs">Fuel Receipt (image, up to 2 MB)</Label><Input type="file" accept="image/*" onChange={e => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              if (file.size > 2 * 1024 * 1024) { toast.error('Receipt image must be 2 MB or smaller'); e.currentTarget.value = ''; return }
+              const reader = new FileReader()
+              reader.onload = () => setForm((current: any) => ({ ...current, receiptImage: String(reader.result || '') }))
+              reader.readAsDataURL(file)
+            }} />{form.receiptImage && <span className="text-xs text-emerald-700">Receipt attached</span>}</div>
 
             {/* Computed preview */}
             <div className="col-span-2 grid grid-cols-4 gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900">

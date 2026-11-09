@@ -43,7 +43,8 @@ export function LoginScreen() {
   }
 
   const quickLogin = (u: typeof DEMO_USERS[number]) => {
-    setIdentifier(u.role === 'DRIVER' ? u.name : u.email); setPassword(u.password)
+    setIdentifier(u.role === 'DRIVER' ? (u.username || u.name) : u.email)
+    setPassword(u.password)
     setTimeout(() => {
       const form = document.getElementById('login-form') as HTMLFormElement
       form?.requestSubmit()
@@ -70,7 +71,7 @@ export function LoginScreen() {
             <span className="text-emerald-600">precision and clarity</span>
           </h1>
           <p className="text-muted-foreground text-lg leading-relaxed">
-            Track every kilometer, every drop of fuel, and every dirham spent. Get real-time
+            Track every kilometer, every drop of fuel, and every Saudi Riyal spent. Get real-time
             insights into vehicle efficiency, driver performance, and operating costs — all in one
             beautiful, fast, modern dashboard.
           </p>
@@ -98,8 +99,8 @@ export function LoginScreen() {
           <CardContent>
             <form id="login-form" onSubmit={submit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="identifier">Email or driver name</Label>
-                <Input id="identifier" type="text" value={identifier} onChange={e => setIdentifier(e.target.value)} required autoComplete="username" placeholder="Email, or driver name" />
+                <Label htmlFor="identifier">Username or email</Label>
+                <Input id="identifier" type="text" value={identifier} onChange={e => setIdentifier(e.target.value)} required autoComplete="username" placeholder="Enter your username or email" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>

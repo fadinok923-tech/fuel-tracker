@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { putAudit, resolveUserId } from '@/lib/audit'
+import { putAudit } from '@/lib/audit'
+import { canAccessVehicle, forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
   const { searchParams } = new URL(req.url)
   const vehicleId = searchParams.get('vehicleId')
   const driverId = searchParams.get('driverId')
@@ -14,6 +17,10 @@ export async function GET(req: NextRequest) {
   const where: any = { deletedAt: null }
   if (vehicleId) where.vehicleId = vehicleId
   if (driverId) where.driverId = driverId
+  if (user.role === 'DRIVER') {
+    where.driverId = user.driverProfile!.id
+    where.vehicleId = user.driverProfile!.assignedVehicleId || '__unassigned__'
+  }
   if (customer) where.customer = { contains: customer }
   if (from || to) {
     where.date = {}
@@ -31,21 +38,30 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user) && user.role !== 'DRIVER') return forbiddenResponse()
   const body = await req.json()
-  const {
+  let {
     date, vehicleId, driverId, startKm, endKm,
     purpose, customer, startLocation, endLocation,
-    timeOut, timeIn, notes, userId = 'seed',
+    timeOut, timeIn, notes,
   } = body
+
+  if (user.role === 'DRIVER') {
+    if (!user.driverProfile?.assignedVehicleId) return forbiddenResponse()
+    vehicleId = user.driverProfile.assignedVehicleId
+    driverId = user.driverProfile.id
+  }
 
   if (!vehicleId || startKm == null || endKm == null) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+  if (!canAccessVehicle(user, vehicleId)) return forbiddenResponse()
   const s = Number(startKm), e = Number(endKm)
   if (e < s) return NextResponse.json({ error: 'End KM cannot be less than Start KM' }, { status: 400 })
   const distance = e - s
 
-  const validUserId = await resolveUserId(userId)
   const trip = await db.trip.create({
     data: {
       date: date ? new Date(date) : new Date(),
@@ -54,7 +70,7 @@ export async function POST(req: NextRequest) {
       purpose, customer, startLocation, endLocation,
       timeOut: timeOut ? new Date(timeOut) : null,
       timeIn: timeIn ? new Date(timeIn) : null,
-      notes, userId: validUserId,
+      notes, userId: user.id,
     },
     include: { vehicle: true, driver: true },
   })
@@ -65,6 +81,6 @@ export async function POST(req: NextRequest) {
     await db.vehicle.update({ where: { id: vehicleId }, data: { currentOdometer: e } })
   }
 
-  await putAudit({ userId: validUserId || undefined, action: 'CREATE', entity: 'Trip', entityId: trip.id, details: `Trip for ${trip.vehicle?.vehicleNumber}: ${distance} km` })
+  await putAudit({ userId: user.id, action: 'CREATE', entity: 'Trip', entityId: trip.id, details: `Trip for ${trip.vehicle?.vehicleNumber}: ${distance} km` })
   return NextResponse.json({ trip })
 }

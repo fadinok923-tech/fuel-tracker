@@ -17,7 +17,8 @@ export type ViewKey =
 
 export interface AuthUser {
   id: string
-  email: string
+  email: string | null
+  username?: string | null
   name: string
   role: Role
 }
@@ -54,9 +55,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   READ_ONLY: 'Read Only',
 }
 
-export const DEMO_USERS: Array<{ email: string; password: string; role: Role; name: string }> = [
+export const DEMO_USERS: Array<{ email: string; username?: string; password: string; role: Role; name: string }> = [
   { email: 'admin@fleet.com', password: 'demo-admin', role: 'ADMIN', name: 'Fleet Admin' },
   { email: 'manager@fleet.com', password: 'demo-manager', role: 'MANAGER', name: 'Operation Manager' },
-  { email: 'driver@fleet.com', password: 'demo-driver', role: 'DRIVER', name: 'Driver Portal' },
+  { email: 'driver@fleet.com', username: 'driver', password: 'demo-driver', role: 'DRIVER', name: 'Driver Portal' },
   { email: 'viewer@fleet.com', password: 'demo-viewer', role: 'READ_ONLY', name: 'Accounting Viewer' },
 ]

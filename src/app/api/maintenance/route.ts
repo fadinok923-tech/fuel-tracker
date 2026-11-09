@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { putAudit, resolveUserId } from '@/lib/audit'
+import { putAudit } from '@/lib/audit'
+import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user)) return forbiddenResponse()
   const { searchParams } = new URL(req.url)
   const vehicleId = searchParams.get('vehicleId')
   const expenseType = searchParams.get('expenseType')
@@ -27,19 +31,27 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user)) return forbiddenResponse()
   const body = await req.json()
-  const { date, vehicleId, expenseType, amount, workshop, invoiceNumber, notes, invoiceImage, userId = 'seed' } = body
+  const { date, vehicleId, expenseType, amount, workshop, invoiceNumber, notes, invoiceImage } = body
 
   if (!vehicleId || !expenseType || amount == null) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const validUserId = await resolveUserId(userId)
+  const invoice = String(invoiceNumber || '').trim()
+  if (invoice) {
+    const duplicate = await db.fuelEntry.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
+    const maintenanceDuplicate = await db.maintenance.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
+    if (duplicate || maintenanceDuplicate) return NextResponse.json({ error: 'This invoice number has already been recorded' }, { status: 409 })
+  }
   const item = await db.maintenance.create({
     data: {
       date: date ? new Date(date) : new Date(),
       vehicleId, expenseType, amount: Number(amount),
-      workshop, invoiceNumber, notes, invoiceImage, userId: validUserId,
+      workshop, invoiceNumber: invoice || null, notes, invoiceImage, userId: user.id,
     },
     include: { vehicle: true },
   })
@@ -66,6 +78,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  await putAudit({ userId: validUserId || undefined, action: 'CREATE', entity: 'Maintenance', entityId: item.id, details: `${expenseType} on ${item.vehicle?.vehicleNumber} - ${amount}` })
+  await putAudit({ userId: user.id, action: 'CREATE', entity: 'Maintenance', entityId: item.id, details: `${expenseType} on ${item.vehicle?.vehicleNumber} - ${amount}` })
   return NextResponse.json({ item })
 }

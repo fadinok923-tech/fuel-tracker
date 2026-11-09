@@ -6,6 +6,10 @@ import { api, fmtCurrency, fmtNumber } from '@/lib/fleet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { toast } from 'sonner'
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -15,19 +19,38 @@ const CHART_COLORS = ['#10b981', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ef4444', '#0
 
 interface Analytics {
   monthly: Array<{ month: string; year: number; fuelCost: number; maintenanceCost: number; km: number; avgKmL: number; fuelLiters: number }>
-  vehicleComparison: Array<{ vehicleNumber: string; fuelCost: number; maintenanceCost: number; totalCost: number; km: number; liters: number; kmL: number }>
+  vehicleComparison: Array<{ id: string; vehicleNumber: string; vehicleName: string; fuelCost: number; maintenanceCost: number; repairCost: number; insuranceCost: number; registrationCost: number; totalCost: number; annualCost: number; km: number; costPerKm: number; liters: number; kmL: number }>
+  monthlyVehicleCosts: Array<Record<string, string | number>>
   driverComparison: Array<{ driverName: string; vehicleNumber: string | null; trips: number; km: number; fuelCost: number; kmL: number }>
   fuelStationDist: Array<{ station: string; cost: number }>
   maintenanceByType: Array<{ type: string; amount: number }>
+  fuelPriceHistory: Array<{ month: string; averagePrice: number; entries: number }>
+  fuelBudget: { amount: number; spent: number; month: string }
 }
 
 export function AnalyticsView() {
   const [data, setData] = useState<Analytics | null>(null)
   const [months, setMonths] = useState('6')
+  const [budget, setBudget] = useState('')
+  const [savingBudget, setSavingBudget] = useState(false)
 
   useEffect(() => {
-    api(`/api/analytics?months=${months}`).then(setData)
+    api(`/api/analytics?months=${months}`).then((next: Analytics) => { setData(next); setBudget(String(next.fuelBudget.amount || '')) })
   }, [months])
+
+  const saveBudget = async () => {
+    setSavingBudget(true)
+    try {
+      await api('/api/fuel-budget', { method: 'PUT', body: JSON.stringify({ amount: Number(budget) }) })
+      const next = await api(`/api/analytics?months=${months}`)
+      setData(next)
+      toast.success('Monthly fuel budget saved')
+    } catch (error: any) {
+      toast.error(error.message || 'Could not save the budget')
+    } finally {
+      setSavingBudget(false)
+    }
+  }
 
   if (!data) return <div className="space-y-4"><Skeleton className="h-80" /><Skeleton className="h-80" /></div>
 
@@ -46,6 +69,55 @@ export function AnalyticsView() {
           </SelectContent>
         </Select>
       </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Monthly Fuel Budget</CardTitle><CardDescription>{data.fuelBudget.month} · {fmtCurrency(data.fuelBudget.spent)} spent</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5"><Label htmlFor="fuel-budget">Budget (SAR)</Label><Input id="fuel-budget" type="number" min="0" step="100" value={budget} onChange={e => setBudget(e.target.value)} placeholder="Set this month’s fuel budget" /></div>
+            {data.fuelBudget.amount > 0 && <div className="text-sm text-muted-foreground">{Math.min(100, data.fuelBudget.spent / data.fuelBudget.amount * 100).toFixed(0)}% used · {fmtCurrency(Math.max(0, data.fuelBudget.amount - data.fuelBudget.spent))} remaining</div>}
+            <Button onClick={saveBudget} disabled={savingBudget || budget === ''}>{savingBudget ? 'Saving…' : 'Save monthly budget'}</Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Fuel Price History</CardTitle><CardDescription>Weighted average purchase price per litre (SAR)</CardDescription></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={data.fuelPriceHistory}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+                <Tooltip formatter={(v: any) => `${fmtCurrency(v)} / L`} />
+                <Line type="monotone" dataKey="averagePrice" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 4 }} name="SAR/L" />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Monthly Operating Expense by Vehicle</CardTitle><CardDescription>Fuel and service costs compared across the selected months (SAR)</CardDescription></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={data.monthlyVehicleCosts}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+              <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
+              <Tooltip formatter={(v: any) => fmtCurrency(v)} />
+              <Legend />
+              {data.vehicleComparison.map((v, i) => <Bar key={v.id} dataKey={v.vehicleNumber} stackId="monthly" fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Complete Vehicle Operating Cost</CardTitle><CardDescription>Selected period totals, cost per kilometre, and actual trailing 12-month cost (SAR)</CardDescription></CardHeader>
+        <CardContent className="p-0"><div className="overflow-x-auto"><Table>
+          <TableHeader><TableRow><TableHead>Vehicle</TableHead><TableHead className="text-right">Fuel</TableHead><TableHead className="text-right">Maintenance</TableHead><TableHead className="text-right">Repairs</TableHead><TableHead className="text-right">Insurance</TableHead><TableHead className="text-right">Registration</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">SAR/km</TableHead><TableHead className="text-right">12-month cost</TableHead></TableRow></TableHeader>
+          <TableBody>{data.vehicleComparison.map(v => <TableRow key={v.id}><TableCell className="font-medium">{v.vehicleNumber} · {v.vehicleName}</TableCell><TableCell className="text-right">{fmtCurrency(v.fuelCost)}</TableCell><TableCell className="text-right">{fmtCurrency(v.maintenanceCost)}</TableCell><TableCell className="text-right">{fmtCurrency(v.repairCost)}</TableCell><TableCell className="text-right">{fmtCurrency(v.insuranceCost)}</TableCell><TableCell className="text-right">{fmtCurrency(v.registrationCost)}</TableCell><TableCell className="text-right font-semibold">{fmtCurrency(v.totalCost)}</TableCell><TableCell className="text-right">{v.costPerKm ? fmtCurrency(v.costPerKm) : '—'}</TableCell><TableCell className="text-right font-semibold">{fmtCurrency(v.annualCost)}</TableCell></TableRow>)}</TableBody>
+        </Table></div></CardContent>
+      </Card>
 
       {/* Monthly fuel cost trend */}
       <Card>

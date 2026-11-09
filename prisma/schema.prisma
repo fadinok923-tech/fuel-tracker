@@ -13,7 +13,8 @@ datasource db {
 // =================== USER & AUTH ===================
 model User {
   id        String   @id @default(cuid())
-  email     String   @unique
+  email     String?  @unique
+  username  String?  @unique
   name      String
   password  String   // hashed
   role      Role     @default(MANAGER)
@@ -26,6 +27,7 @@ model User {
   fuelEntries FuelEntry[]
   trips     Trip[]
   maintenance Maintenance[]
+  driverProfile Driver? @relation("DriverAccount")
 
   @@index([email])
   @@index([role])
@@ -111,7 +113,9 @@ model Driver {
   deletedAt DateTime?
 
   assignedVehicleId String? @unique
+  userId        String?  @unique
   assignedVehicle   Vehicle? @relation("VehicleDriver", fields: [assignedVehicleId], references: [id])
+  user              User?    @relation("DriverAccount", fields: [userId], references: [id], onDelete: SetNull)
 
   fuelEntries FuelEntry[]
   trips       Trip[]

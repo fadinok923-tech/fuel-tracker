@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { putAudit } from '@/lib/audit'
+import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const actor = await getRequestUser(req)
+  if (!actor) return unauthorizedResponse()
+  if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
   const body = await req.json()
   const existing = await db.fuelEntry.findUnique({ where: { id } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  if (body.invoiceNumber !== undefined && String(body.invoiceNumber || '').trim()) {
+    const invoice = String(body.invoiceNumber).trim()
+    const duplicateFuel = await db.fuelEntry.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null, id: { not: id } } })
+    const duplicateMaintenance = await db.maintenance.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
+    if (duplicateFuel || duplicateMaintenance) return NextResponse.json({ error: 'This invoice number has already been recorded' }, { status: 409 })
+  }
 
   const data: any = {}
   if (body.date !== undefined) data.date = new Date(body.date)
@@ -52,15 +63,16 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     }
   }
 
-  await putAudit({ userId: body.userId || 'seed', action: 'UPDATE', entity: 'FuelEntry', entityId: id, details: `Updated fuel entry` })
+  await putAudit({ userId: actor.id, action: 'UPDATE', entity: 'FuelEntry', entityId: id, details: `Updated fuel entry` })
   return NextResponse.json({ entry })
 }
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const actor = await getRequestUser(req)
+  if (!actor) return unauthorizedResponse()
+  if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
-  const { searchParams } = new URL(req.url)
-  const userId = searchParams.get('userId') || 'seed'
   await db.fuelEntry.update({ where: { id }, data: { deletedAt: new Date() } })
-  await putAudit({ userId, action: 'DELETE', entity: 'FuelEntry', entityId: id, details: `Soft-deleted fuel entry` })
+  await putAudit({ userId: actor.id, action: 'DELETE', entity: 'FuelEntry', entityId: id, details: `Soft-deleted fuel entry` })
   return NextResponse.json({ ok: true })
 }
