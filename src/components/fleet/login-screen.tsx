@@ -20,7 +20,7 @@ const ROLE_ICONS: Record<Role, typeof Truck> = {
 export function LoginScreen() {
   const { setUser } = useAuth()
   const { setView } = useUI()
-  const [email, setEmail] = useState('admin@fleet.com')
+  const [identifier, setIdentifier] = useState('admin@fleet.com')
   const [password, setPassword] = useState('demo-admin')
   const [loading, setLoading] = useState(false)
 
@@ -30,7 +30,7 @@ export function LoginScreen() {
     try {
       const data = await api('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ identifier, password }),
       })
       setUser(data.user)
       setView('dashboard')
@@ -43,7 +43,7 @@ export function LoginScreen() {
   }
 
   const quickLogin = (u: typeof DEMO_USERS[number]) => {
-    setEmail(u.email); setPassword(u.password)
+    setIdentifier(u.role === 'DRIVER' ? u.name : u.email); setPassword(u.password)
     setTimeout(() => {
       const form = document.getElementById('login-form') as HTMLFormElement
       form?.requestSubmit()
@@ -98,8 +98,8 @@ export function LoginScreen() {
           <CardContent>
             <form id="login-form" onSubmit={submit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
+                <Label htmlFor="identifier">Email or driver name</Label>
+                <Input id="identifier" type="text" value={identifier} onChange={e => setIdentifier(e.target.value)} required autoComplete="username" placeholder="Email, or driver name" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
