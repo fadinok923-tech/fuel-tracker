@@ -42,10 +42,14 @@ if (process.env.VERCEL_ENV === 'production') {
         AND table_name <> '_prisma_migrations'
     `
     const migrationTable = await prisma.$queryRaw`
-      SELECT to_regclass('public._prisma_migrations') IS NOT NULL AS "exists"
+      SELECT COUNT(*)::int AS "count"
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_type = 'BASE TABLE'
+        AND table_name = '_prisma_migrations'
     `
 
-    if (Number(tableCount) > 0 && migrationTable[0].exists) {
+    if (Number(tableCount) > 0 && Number(migrationTable[0].count) > 0) {
       const migrations = await prisma.$queryRaw`
         SELECT migration_name AS name
         FROM public._prisma_migrations
