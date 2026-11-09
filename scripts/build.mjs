@@ -32,7 +32,7 @@ if (process.env.VERCEL_ENV === 'production') {
   // This Neon database already contains the app schema. Prisma Migrate needs
   // the initial migration recorded as applied before it can manage future changes.
   const { PrismaClient } = await import('@prisma/client')
-  const prisma = new PrismaClient()
+  const prisma = new PrismaClient({ datasourceUrl: migrationUrl })
   try {
     const [{ tableCount }] = await prisma.$queryRaw`
       SELECT COUNT(*)::int AS "tableCount"
