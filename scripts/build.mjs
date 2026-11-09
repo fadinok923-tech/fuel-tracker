@@ -27,11 +27,44 @@ if (process.env.VERCEL_ENV === 'production') {
   if (!migrationUrl) {
     throw new Error('Set DATABASE_URL_UNPOOLED or DATABASE_URL for production migrations.')
   }
-  run('prisma', ['migrate', 'deploy'], {
-    ...process.env,
-    DATABASE_URL: migrationUrl,
-  })
+  const migrationEnv = { ...process.env, DATABASE_URL: migrationUrl }
+
+  // This Neon database already contains the app schema. Prisma Migrate needs
+  // the initial migration recorded as applied before it can manage future changes.
+  const { PrismaClient } = await import('@prisma/client')
+  const prisma = new PrismaClient()
+  try {
+    const [{ tableCount }] = await prisma.$queryRaw`
+      SELECT COUNT(*)::int AS "tableCount"
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_type = 'BASE TABLE'
+        AND table_name <> '_prisma_migrations'
+    `
+    const migrationTable = await prisma.$queryRaw`
+      SELECT to_regclass('public._prisma_migrations') IS NOT NULL AS "exists"
+    `
+
+    if (Number(tableCount) > 0 && migrationTable[0].exists) {
+      const migrations = await prisma.$queryRaw`
+        SELECT migration_name AS name
+        FROM public._prisma_migrations
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+      `
+      if (migrations.length === 0) {
+        run('prisma', ['migrate', 'resolve', '--applied', '20261109130000_init'], migrationEnv)
+      } else if (!migrations.some((migration) => migration.name === '20261109130000_init')) {
+        throw new Error('The database has a different migration history; stopping before schema changes.')
+      }
+    } else if (Number(tableCount) > 0) {
+      run('prisma', ['migrate', 'resolve', '--applied', '20261109130000_init'], migrationEnv)
+    }
+  } finally {
+    await prisma.$disconnect()
+  }
+
+  run('prisma', ['migrate', 'deploy'], migrationEnv)
+  run('node', ['scripts/seed-demo-users.mjs'], migrationEnv)
 }
 
 run('next', ['build'])
-
