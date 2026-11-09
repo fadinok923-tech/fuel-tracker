@@ -69,6 +69,8 @@ if (process.env.VERCEL_ENV === 'production') {
   }
 
   run('prisma', ['migrate', 'deploy'], migrationEnv)
+  // Keep seeding on the same Neon branch/endpoint that Prisma Migrate updated.
+  process.env.DATABASE_URL = migrationUrl
   await import('./seed-demo-users.mjs')
 }
 
