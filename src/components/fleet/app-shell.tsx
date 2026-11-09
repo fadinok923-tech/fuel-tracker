@@ -37,9 +37,19 @@ const VIEWS: Record<ViewKey, () => JSX.Element> = {
 }
 
 export function AppShell() {
-  const { user } = useAuth()
+  const { user, setUser, logout } = useAuth()
   const { view, sidebarOpen, setSidebarOpen } = useUI()
   const [alertsCount, setAlertsCount] = useState(0)
+  const [authReady, setAuthReady] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    api('/api/auth/session')
+      .then(data => { if (active) setUser(data.user) })
+      .catch(() => { if (active) logout() })
+      .finally(() => { if (active) setAuthReady(true) })
+    return () => { active = false }
+  }, [setUser, logout])
 
   // Live alerts badge count (critical + warning only)
   useEffect(() => {
@@ -52,6 +62,7 @@ export function AppShell() {
     return () => clearInterval(t)
   }, [user])
 
+  if (!authReady) return <div className="min-h-screen grid place-items-center text-sm text-muted-foreground">Checking your session…</div>
   if (!user) return <LoginScreen />
 
   const allowed = PERMISSIONS[user.role].views
@@ -93,7 +104,7 @@ export function AppShell() {
             <span>·</span>
             <span>Role: <span className="font-medium text-foreground">{user.role}</span></span>
             <span>·</span>
-            <span>Data: PostgreSQL-compatible (SQLite dev)</span>
+            <span>Database: PostgreSQL</span>
           </div>
         </footer>
       </div>

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { putAudit } from '@/lib/audit'
+import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const actor = await getRequestUser(req)
+  if (!actor) return unauthorizedResponse()
+  if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
   const body = await req.json()
   const existing = await db.trip.findUnique({ where: { id } })
@@ -27,15 +31,16 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   data.distance = e - s
 
   const trip = await db.trip.update({ where: { id }, data, include: { vehicle: true, driver: true } })
-  await putAudit({ userId: body.userId || 'seed', action: 'UPDATE', entity: 'Trip', entityId: id, details: `Updated trip ${trip.distance} km` })
+  await putAudit({ userId: actor.id, action: 'UPDATE', entity: 'Trip', entityId: id, details: `Updated trip ${trip.distance} km` })
   return NextResponse.json({ trip })
 }
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const actor = await getRequestUser(req)
+  if (!actor) return unauthorizedResponse()
+  if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
-  const { searchParams } = new URL(req.url)
-  const userId = searchParams.get('userId') || 'seed'
   await db.trip.update({ where: { id }, data: { deletedAt: new Date() } })
-  await putAudit({ userId, action: 'DELETE', entity: 'Trip', entityId: id, details: `Soft-deleted trip` })
+  await putAudit({ userId: actor.id, action: 'DELETE', entity: 'Trip', entityId: id, details: `Soft-deleted trip` })
   return NextResponse.json({ ok: true })
 }

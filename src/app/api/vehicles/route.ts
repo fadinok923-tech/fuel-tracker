@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { putAudit } from '@/lib/audit'
+import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 // GET /api/vehicles - list all vehicles
 export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
   const { searchParams } = new URL(req.url)
   const includeDeleted = searchParams.get('includeDeleted') === 'true'
   const where: any = includeDeleted ? {} : { deletedAt: null }
+  if (user.role === 'DRIVER') where.id = user.driverProfile?.assignedVehicleId || '__unassigned__'
 
   const vehicles = await db.vehicle.findMany({
     where,
@@ -18,13 +22,16 @@ export async function GET(req: NextRequest) {
 
 // POST /api/vehicles - create new vehicle
 export async function POST(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user)) return forbiddenResponse()
   const body = await req.json()
   const {
     vehicleNumber, plateNumber, vehicleName, brand, model, year,
     fuelType, tankCapacity, status, insuranceExpiry, registrationExpiry,
     purchaseDate, purchasePrice, currentOdometer, notes,
     oilChangeKmInterval, serviceKmInterval, tyreKmInterval, batteryIntervalDays,
-    assignedDriverId, userId = 'seed',
+    assignedDriverId,
   } = body
 
   const dup = await db.vehicle.findFirst({
@@ -56,6 +63,6 @@ export async function POST(req: NextRequest) {
     await db.driver.update({ where: { id: assignedDriverId }, data: { assignedVehicleId: vehicle.id } })
   }
 
-  await putAudit({ userId, action: 'CREATE', entity: 'Vehicle', entityId: vehicle.id, details: `Created ${vehicle.vehicleNumber}` })
+  await putAudit({ userId: user.id, action: 'CREATE', entity: 'Vehicle', entityId: vehicle.id, details: `Created ${vehicle.vehicleNumber}` })
   return NextResponse.json({ vehicle })
 }

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 // GET /api/audit - paginated audit log
 export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user)) return forbiddenResponse()
   const { searchParams } = new URL(req.url)
   const limit = Number(searchParams.get('limit') || 200)
   const offset = Number(searchParams.get('offset') || 0)

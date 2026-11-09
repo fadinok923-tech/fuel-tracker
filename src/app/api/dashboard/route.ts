@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getRequestUser, unauthorizedResponse } from '@/lib/server-auth'
 
 // Aggregated KPI endpoint for dashboard
 export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
   const { searchParams } = new URL(req.url)
   const fromStr = searchParams.get('from')
   const toStr = searchParams.get('to')
@@ -17,21 +20,28 @@ export async function GET(req: NextRequest) {
   const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
   const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999)
 
-  const vehicles = await db.vehicle.findMany({ where: { deletedAt: null }, include: { assignedDriver: true } })
+  const vehicleWhere: any = { deletedAt: null }
+  const recordScope: any = { deletedAt: null }
+  if (user.role === 'DRIVER') {
+    vehicleWhere.id = user.driverProfile!.assignedVehicleId || '__unassigned__'
+    recordScope.vehicleId = user.driverProfile!.assignedVehicleId || '__unassigned__'
+  }
+  const fuelTripScope = user.role === 'DRIVER' ? { ...recordScope, driverId: user.driverProfile!.id } : recordScope
+  const vehicles = await db.vehicle.findMany({ where: vehicleWhere, include: { assignedDriver: true } })
   const fuelEntries = await db.fuelEntry.findMany({
-    where: { deletedAt: null, date: { gte: from, lte: to } },
+    where: { ...fuelTripScope, date: { gte: from, lte: to } },
     include: { vehicle: true },
   })
   const trips = await db.trip.findMany({
-    where: { deletedAt: null, date: { gte: from, lte: to } },
+    where: { ...fuelTripScope, date: { gte: from, lte: to } },
     include: { vehicle: true },
   })
   const maintenance = await db.maintenance.findMany({
-    where: { deletedAt: null, date: { gte: from, lte: to } },
+    where: { ...recordScope, date: { gte: from, lte: to } },
     include: { vehicle: true },
   })
   const todayTrips = await db.trip.findMany({
-    where: { deletedAt: null, date: { gte: startOfToday, lte: endOfToday } },
+    where: { ...fuelTripScope, date: { gte: startOfToday, lte: endOfToday } },
   })
 
   const totalVehicles = vehicles.length

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { putAudit, resolveUserId } from '@/lib/audit'
+import { putAudit } from '@/lib/audit'
+import { canAccessVehicle, forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
   const { searchParams } = new URL(req.url)
   const vehicleId = searchParams.get('vehicleId')
   const driverId = searchParams.get('driverId')
@@ -13,6 +16,10 @@ export async function GET(req: NextRequest) {
   const where: any = { deletedAt: null }
   if (vehicleId) where.vehicleId = vehicleId
   if (driverId) where.driverId = driverId
+  if (user.role === 'DRIVER') {
+    where.driverId = user.driverProfile!.id
+    where.vehicleId = user.driverProfile!.assignedVehicleId || '__unassigned__'
+  }
   if (from || to) {
     where.date = {}
     if (from) where.date.gte = new Date(from)
@@ -29,15 +36,34 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user) && user.role !== 'DRIVER') return forbiddenResponse()
   const body = await req.json()
-  const {
+  let {
     date, vehicleId, driverId, odometer, liters, pricePerLiter,
     fuelStation, invoiceNumber, paymentMethod, notes, receiptImage,
-    userId = 'seed',
   } = body
+
+  if (user.role === 'DRIVER') {
+    if (!user.driverProfile?.assignedVehicleId) return forbiddenResponse()
+    vehicleId = user.driverProfile.assignedVehicleId
+    driverId = user.driverProfile.id
+  }
 
   if (!vehicleId || odometer == null || !liters || !pricePerLiter) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+  if (Number(liters) <= 0 || Number(pricePerLiter) <= 0 || Number(odometer) < 0) {
+    return NextResponse.json({ error: 'Liters and price must be positive; odometer cannot be negative' }, { status: 400 })
+  }
+
+  if (!canAccessVehicle(user, vehicleId)) return forbiddenResponse()
+  const invoice = String(invoiceNumber || '').trim()
+  if (invoice) {
+    const duplicate = await db.fuelEntry.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
+    const maintenanceDuplicate = await db.maintenance.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
+    if (duplicate || maintenanceDuplicate) return NextResponse.json({ error: 'This invoice number has already been recorded' }, { status: 409 })
   }
 
   // Find previous fuel entry for this vehicle (most recent by odometer OR date)
@@ -58,7 +84,6 @@ export async function POST(req: NextRequest) {
   const kmPerLiter = distance > 0 ? +(distance / Number(liters)).toFixed(2) : null
   const costPerKm = distance > 0 ? +(totalCost / distance).toFixed(3) : null
 
-  const validUserId = await resolveUserId(userId)
   const entry = await db.fuelEntry.create({
     data: {
       date: date ? new Date(date) : new Date(),
@@ -73,7 +98,7 @@ export async function POST(req: NextRequest) {
       paymentMethod: paymentMethod || 'CASH',
       notes, receiptImage,
       kmPerLiter, costPerKm,
-      userId: validUserId,
+      userId: user.id,
     },
     include: { vehicle: true, driver: true },
   })
@@ -83,6 +108,6 @@ export async function POST(req: NextRequest) {
     await db.vehicle.update({ where: { id: vehicleId }, data: { currentOdometer: Number(odometer) } })
   }
 
-  await putAudit({ userId: validUserId || undefined, action: 'CREATE', entity: 'FuelEntry', entityId: entry.id, details: `Fuel entry for ${entry.vehicle?.vehicleNumber}: ${liters}L` })
+  await putAudit({ userId: user.id, action: 'CREATE', entity: 'FuelEntry', entityId: entry.id, details: `Fuel entry for ${entry.vehicle?.vehicleNumber}: ${liters}L` })
   return NextResponse.json({ entry })
 }

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getRequestUser, unauthorizedResponse } from '@/lib/server-auth'
 
 // GET /api/alerts - compute live alerts based on current state
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
   const now = new Date()
   const alerts: Array<{
     severity: 'critical' | 'warning' | 'info'
@@ -14,7 +17,7 @@ export async function GET() {
     daysOverdue?: number
   }> = []
 
-  const vehicles = await db.vehicle.findMany({ where: { deletedAt: null }, include: { assignedDriver: true } })
+  const vehicles = await db.vehicle.findMany({ where: { deletedAt: null, ...(user.role === 'DRIVER' ? { id: user.driverProfile!.assignedVehicleId || '__unassigned__' } : {}) }, include: { assignedDriver: true } })
 
   for (const v of vehicles) {
     // Insurance expiry
@@ -31,7 +34,7 @@ export async function GET() {
       const days = Math.floor((v.registrationExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
       if (days < 0) {
         alerts.push({ severity: 'critical', type: 'REGISTRATION_EXPIRED', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} registration expired`, dueDate: v.registrationExpiry.toISOString(), daysOverdue: Math.abs(days) })
-      } else if (days <= 30) {
+      } else if (days <= 15) {
         alerts.push({ severity: 'warning', type: 'REGISTRATION_EXPIRING', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} registration expires in ${days} days`, dueDate: v.registrationExpiry.toISOString(), daysOverdue: -days })
       }
     }
@@ -40,7 +43,7 @@ export async function GET() {
       const kmSince = v.currentOdometer - v.lastOilChangeKm
       if (kmSince >= v.oilChangeKmInterval) {
         alerts.push({ severity: 'critical', type: 'OIL_CHANGE_DUE', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} oil change overdue by ${(kmSince - v.oilChangeKmInterval).toFixed(0)} km` })
-      } else if (kmSince >= v.oilChangeKmInterval * 0.8) {
+      } else if (v.oilChangeKmInterval - kmSince <= 500) {
         alerts.push({ severity: 'warning', type: 'OIL_CHANGE_SOON', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} oil change due in ${(v.oilChangeKmInterval - kmSince).toFixed(0)} km` })
       }
     }
@@ -49,7 +52,7 @@ export async function GET() {
       const kmSince = v.currentOdometer - v.lastServiceKm
       if (kmSince >= v.serviceKmInterval) {
         alerts.push({ severity: 'critical', type: 'SERVICE_DUE', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} general service overdue by ${(kmSince - v.serviceKmInterval).toFixed(0)} km` })
-      } else if (kmSince >= v.serviceKmInterval * 0.8) {
+      } else if (v.serviceKmInterval - kmSince <= 500) {
         alerts.push({ severity: 'warning', type: 'SERVICE_SOON', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} service due in ${(v.serviceKmInterval - kmSince).toFixed(0)} km` })
       }
     }
@@ -58,7 +61,7 @@ export async function GET() {
       const kmSince = v.currentOdometer - v.lastTyreChangeKm
       if (kmSince >= v.tyreKmInterval) {
         alerts.push({ severity: 'critical', type: 'TYRES_DUE', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} tyre replacement overdue by ${(kmSince - v.tyreKmInterval).toFixed(0)} km` })
-      } else if (kmSince >= v.tyreKmInterval * 0.85) {
+      } else if (v.tyreKmInterval - kmSince <= 1000) {
         alerts.push({ severity: 'warning', type: 'TYRES_SOON', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} tyres due in ${(v.tyreKmInterval - kmSince).toFixed(0)} km` })
       }
     }
@@ -74,7 +77,7 @@ export async function GET() {
   }
 
   // Driver license expiry alerts
-  const drivers = await db.driver.findMany({ where: { deletedAt: null } })
+  const drivers = await db.driver.findMany({ where: { deletedAt: null, ...(user.role === 'DRIVER' ? { id: user.driverProfile!.id } : {}) } })
   for (const d of drivers) {
     if (d.licenseExpiry) {
       const days = Math.floor((d.licenseExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
@@ -90,8 +93,11 @@ export async function GET() {
   const lowFuelThresholdDays = 5
   const inactiveThresholdDays = 3
   for (const v of vehicles) {
+    if (v.status === 'IN_SERVICE') {
+      alerts.push({ severity: 'critical', type: 'IMMEDIATE_SERVICE', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} requires immediate servicing` })
+    }
     const lastFuel = await db.fuelEntry.findFirst({
-      where: { vehicleId: v.id, deletedAt: null },
+      where: { vehicleId: v.id, deletedAt: null, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}) },
       orderBy: { date: 'desc' },
     })
     if (lastFuel) {
@@ -100,18 +106,19 @@ export async function GET() {
         alerts.push({ severity: 'warning', type: 'NO_FUEL', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} not fueled for ${daysSinceFuel} days` })
       }
       // Abnormal fuel consumption: KM/L drops by >30% vs vehicle average
-      const allFuels = await db.fuelEntry.findMany({ where: { vehicleId: v.id, deletedAt: null, distance: { gt: 0 } } })
+      const allFuels = await db.fuelEntry.findMany({ where: { vehicleId: v.id, deletedAt: null, distance: { gt: 0 }, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}) }, orderBy: { date: 'desc' } })
       if (allFuels.length >= 3) {
-        const avgKmL = allFuels.reduce((s, f) => s + (f.kmPerLiter || 0), 0) / allFuels.length
-        const last = allFuels[allFuels.length - 1]
+        const last = allFuels[0]
+        const baseline = allFuels.slice(1).filter(f => f.kmPerLiter && f.kmPerLiter > 0)
+        const avgKmL = baseline.length ? baseline.reduce((s, f) => s + (f.kmPerLiter || 0), 0) / baseline.length : 0
         if (last.kmPerLiter && avgKmL > 0 && last.kmPerLiter < avgKmL * 0.7) {
-          alerts.push({ severity: 'warning', type: 'ABNORMAL_FUEL', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} abnormal fuel consumption: ${last.kmPerLiter.toFixed(2)} km/L vs avg ${avgKmL.toFixed(2)}` })
+          alerts.push({ severity: 'warning', type: 'ABNORMAL_FUEL', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} abnormal fuel consumption: ${last.kmPerLiter.toFixed(2)} km/L vs previous average ${avgKmL.toFixed(2)}` })
         }
       }
     }
     // Vehicle hasn't moved (no trips recently)
     const lastTrip = await db.trip.findFirst({
-      where: { vehicleId: v.id, deletedAt: null },
+      where: { vehicleId: v.id, deletedAt: null, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}) },
       orderBy: { date: 'desc' },
     })
     if (!lastTrip) {

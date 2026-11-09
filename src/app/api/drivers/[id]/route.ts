@@ -1,58 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { putAudit } from '@/lib/audit'
+import { forbiddenResponse, getRequestUser, hashPassword, isAdmin, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+const driverInclude = { assignedVehicle: true, user: { select: { id: true, username: true, active: true } } }
+
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
   const { id } = await ctx.params
-  const driver = await db.driver.findUnique({ where: { id }, include: { assignedVehicle: true } })
+  if (user.role === 'DRIVER' && user.driverProfile?.id !== id) return forbiddenResponse()
+  const driver = await db.driver.findUnique({ where: { id }, include: driverInclude })
   if (!driver) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json({ driver })
 }
 
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const actor = await getRequestUser(req)
+  if (!actor) return unauthorizedResponse()
+  if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
   const body = await req.json()
-  const existing = await db.driver.findUnique({ where: { id } })
+  const existing = await db.driver.findUnique({ where: { id }, include: { user: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  const changesAccount = body.username !== undefined || body.password !== undefined || body.status === 'INACTIVE' || body.active !== undefined
+  if (changesAccount && !isAdmin(actor)) return forbiddenResponse()
+  if (body.username) {
+    const duplicate = await db.user.findFirst({ where: { username: { equals: body.username.trim(), mode: 'insensitive' }, id: { not: existing.userId || '' }, deletedAt: null } })
+    if (duplicate) return NextResponse.json({ error: 'Username already exists' }, { status: 409 })
+  }
   if (body.licenseNumber) {
-    const dup = await db.driver.findFirst({
-      where: { licenseNumber: body.licenseNumber, id: { not: id }, deletedAt: null },
-    })
-    if (dup) return NextResponse.json({ error: 'License number already exists' }, { status: 400 })
+    const duplicate = await db.driver.findFirst({ where: { licenseNumber: body.licenseNumber, id: { not: id }, deletedAt: null } })
+    if (duplicate) return NextResponse.json({ error: 'License number already exists' }, { status: 409 })
   }
 
   const data: any = {}
-  const fields = ['name','mobile','licenseNumber','status','notes']
-  for (const f of fields) if (body[f] !== undefined) data[f] = body[f]
+  for (const field of ['name', 'mobile', 'licenseNumber', 'status', 'notes'] as const) if (body[field] !== undefined) data[field] = body[field]
   if (body.licenseExpiry !== undefined) data.licenseExpiry = body.licenseExpiry ? new Date(body.licenseExpiry) : null
+  if (body.assignedVehicleId !== undefined) data.assignedVehicleId = body.assignedVehicleId || null
 
-  if (body.assignedVehicleId !== undefined) {
-    // disconnect old vehicle from this driver
-    if (existing.assignedVehicleId) {
-      await db.vehicle.update({ where: { id: existing.assignedVehicleId }, data: { assignedDriver: { disconnect: true } } }).catch(()=>{})
+  const driver = await db.$transaction(async tx => {
+    const updated = await tx.driver.update({ where: { id }, data, include: driverInclude })
+    if (existing.userId) {
+      const accountData: any = { active: body.active !== undefined ? Boolean(body.active) : body.status !== undefined ? body.status !== 'INACTIVE' : existing.user?.active ?? true }
+      if (body.username !== undefined) accountData.username = body.username.trim()
+      if (body.password) accountData.password = hashPassword(String(body.password))
+      if (body.name !== undefined) accountData.name = body.name
+      await tx.user.update({ where: { id: existing.userId }, data: accountData })
+    } else if (body.username && body.password) {
+      const account = await tx.user.create({ data: { name: body.name || existing.name, username: body.username.trim(), email: null, password: hashPassword(String(body.password)), role: 'DRIVER', active: body.status !== 'INACTIVE' } })
+      await tx.driver.update({ where: { id }, data: { userId: account.id } })
+    } else if (body.username || body.password) {
+      throw new Error('A username and password are both required to create the driver account.')
     }
-    if (body.assignedVehicleId) {
-      // remove this vehicle from any other driver currently holding it
-      await db.driver.updateMany({ where: { assignedVehicleId: body.assignedVehicleId, id: { not: id } }, data: { assignedVehicleId: null } })
-      data.assignedVehicle = { connect: { id: body.assignedVehicleId } }
-      // ensure vehicle.assignedDriver is set
-      await db.vehicle.update({ where: { id: body.assignedVehicleId }, data: { assignedDriver: { connect: { id } } } })
-    } else {
-      data.assignedVehicle = { disconnect: true }
-    }
-  }
+    return tx.driver.findUniqueOrThrow({ where: { id }, include: driverInclude })
+  })
 
-  const driver = await db.driver.update({ where: { id }, data, include: { assignedVehicle: true } })
-  await putAudit({ userId: body.userId || 'seed', action: 'UPDATE', entity: 'Driver', entityId: id, details: `Updated ${driver.name}` })
+  await putAudit({ userId: actor.id, action: 'UPDATE', entity: 'Driver', entityId: id, details: `Updated ${driver.name}` })
   return NextResponse.json({ driver })
 }
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const actor = await getRequestUser(req)
+  if (!actor) return unauthorizedResponse()
+  if (!isAdmin(actor)) return forbiddenResponse()
   const { id } = await ctx.params
-  const { searchParams } = new URL(req.url)
-  const userId = searchParams.get('userId') || 'seed'
-  const driver = await db.driver.update({ where: { id }, data: { deletedAt: new Date(), status: 'INACTIVE' } })
-  await putAudit({ userId, action: 'DELETE', entity: 'Driver', entityId: id, details: `Soft-deleted ${driver.name}` })
+  const current = await db.driver.findUnique({ where: { id } })
+  if (!current) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const driver = await db.$transaction(async tx => {
+    if (current.userId) await tx.user.update({ where: { id: current.userId }, data: { active: false } })
+    return tx.driver.update({ where: { id }, data: { deletedAt: new Date(), status: 'INACTIVE' }, include: driverInclude })
+  })
+  await putAudit({ userId: actor.id, action: 'DELETE', entity: 'Driver', entityId: id, details: `Deactivated ${driver.name} and login` })
   return NextResponse.json({ ok: true })
 }

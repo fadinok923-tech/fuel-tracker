@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { putAudit } from '@/lib/audit'
+import { canAccessVehicle, forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
 // GET /api/vehicles/[id]
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
   const { id } = await ctx.params
+  if (!canAccessVehicle(user, id)) return forbiddenResponse()
   const vehicle = await db.vehicle.findUnique({ where: { id }, include: { assignedDriver: true } })
   if (!vehicle) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json({ vehicle })
@@ -12,6 +16,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
 // PUT /api/vehicles/[id] - update vehicle
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user)) return forbiddenResponse()
   const { id } = await ctx.params
   const body = await req.json()
   const existing = await db.vehicle.findUnique({ where: { id } })
@@ -63,16 +70,17 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   }
 
   const vehicle = await db.vehicle.update({ where: { id }, data, include: { assignedDriver: true } })
-  await putAudit({ userId: body.userId || 'seed', action: 'UPDATE', entity: 'Vehicle', entityId: id, details: `Updated ${vehicle.vehicleNumber}` })
+  await putAudit({ userId: user.id, action: 'UPDATE', entity: 'Vehicle', entityId: id, details: `Updated ${vehicle.vehicleNumber}` })
   return NextResponse.json({ vehicle })
 }
 
 // DELETE - soft delete
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getRequestUser(req)
+  if (!user) return unauthorizedResponse()
+  if (!isManager(user)) return forbiddenResponse()
   const { id } = await ctx.params
-  const { searchParams } = new URL(req.url)
-  const userId = searchParams.get('userId') || 'seed'
   const vehicle = await db.vehicle.update({ where: { id }, data: { deletedAt: new Date(), status: 'RETIRED' } })
-  await putAudit({ userId, action: 'DELETE', entity: 'Vehicle', entityId: id, details: `Soft-deleted ${vehicle.vehicleNumber}` })
+  await putAudit({ userId: user.id, action: 'DELETE', entity: 'Vehicle', entityId: id, details: `Soft-deleted ${vehicle.vehicleNumber}` })
   return NextResponse.json({ ok: true })
 }
