@@ -20,6 +20,17 @@ function run(binary, args, env = process.env) {
 
 run('prisma', ['generate'])
 
+// Read-only diagnostic branch: print the remote schema for safe migration baselining.
+if (process.env.VERCEL_GIT_COMMIT_REF === 'codex/introspect-neon-schema') {
+  const readOnlyUrl = process.env.DATABASE_URL_UNPOOLED
+  if (!readOnlyUrl) throw new Error('DATABASE_URL_UNPOOLED is required for schema inspection.')
+  run('prisma', ['db', 'pull', '--print'], {
+    ...process.env,
+    DATABASE_URL: readOnlyUrl,
+  })
+}
+
+
 // Apply schema changes only to production. Preview deployments must not run
 // migrations against the production database.
 if (process.env.VERCEL_ENV === 'production') {
