@@ -64,7 +64,7 @@ if (process.env.VERCEL_ENV === 'production') {
   }
 
   run('prisma', ['migrate', 'deploy'], migrationEnv)
-  run('node', ['scripts/seed-demo-users.mjs'], migrationEnv)
+  await import('./seed-demo-users.mjs')
 }
 
 run('next', ['build'])
