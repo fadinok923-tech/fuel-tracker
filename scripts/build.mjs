@@ -24,7 +24,7 @@ run('prisma', ['generate'])
 if (process.env.VERCEL_GIT_COMMIT_REF === 'codex/introspect-neon-schema') {
   const readOnlyUrl = process.env.DATABASE_URL_UNPOOLED
   if (!readOnlyUrl) throw new Error('DATABASE_URL_UNPOOLED is required for schema inspection.')
-  run('prisma', ['db', 'pull', '--print'], {
+  run('prisma', ['migrate', 'diff', '--from-url', readOnlyUrl, '--to-schema-datamodel', 'prisma/schema.prisma', '--script'], {
     ...process.env,
     DATABASE_URL: readOnlyUrl,
   })
