@@ -26,7 +26,10 @@ export async function GET(req: NextRequest) {
     vehicleWhere.id = user.driverProfile!.assignedVehicleId || '__unassigned__'
     recordScope.vehicleId = user.driverProfile!.assignedVehicleId || '__unassigned__'
   }
-  const fuelTripScope = user.role === 'DRIVER' ? { ...recordScope, driverId: user.driverProfile!.id } : recordScope
+  // Drivers see their own fuel and trip history, including records from a vehicle
+  // they were previously assigned. Vehicle and maintenance summaries stay scoped
+  // to their currently assigned vehicle.
+  const fuelTripScope = user.role === 'DRIVER' ? { deletedAt: null, driverId: user.driverProfile!.id } : recordScope
   const vehicles = await db.vehicle.findMany({ where: vehicleWhere, include: { assignedDriver: true } })
   const fuelEntries = await db.fuelEntry.findMany({
     where: { ...fuelTripScope, date: { gte: from, lte: to } },
@@ -36,7 +39,7 @@ export async function GET(req: NextRequest) {
     where: { ...fuelTripScope, date: { gte: from, lte: to } },
     include: { vehicle: true },
   })
-  const maintenance = await db.maintenance.findMany({
+  const maintenance = user.role === 'DRIVER' ? [] : await db.maintenance.findMany({
     where: { ...recordScope, date: { gte: from, lte: to } },
     include: { vehicle: true },
   })
