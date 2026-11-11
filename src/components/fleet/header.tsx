@@ -93,7 +93,7 @@ export function Header({ onMenuClick, alertsCount }: { onMenuClick: () => void; 
             <DropdownMenuLabel>
               <div className="flex flex-col">
                 <span className="text-sm font-medium">{user?.name}</span>
-                <span className="text-xs text-muted-foreground">{user?.username || user?.email}</span>
+                <span className="text-xs text-muted-foreground">{user?.username || user?.name}</span>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

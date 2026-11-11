@@ -4,14 +4,25 @@ import { randomBytes, scryptSync } from 'node:crypto'
 const prisma = new PrismaClient()
 
 const demoUsers = [
-  { id: 'seed-admin', email: 'admin@fleet.com', name: 'Fleet Admin', password: 'demo-admin', role: 'ADMIN' },
-  { id: 'seed-manager', email: 'manager@fleet.com', name: 'Operation Manager', password: 'demo-manager', role: 'MANAGER' },
+  { id: 'seed-admin', email: 'admin@fleet.com', username: 'admin', name: 'Fleet Admin', password: 'demo-admin', role: 'ADMIN' },
+  { id: 'seed-manager', email: 'manager@fleet.com', username: 'manager', name: 'Operation Manager', password: 'demo-manager', role: 'MANAGER' },
   { id: 'seed-driver', email: 'driver@fleet.com', username: 'driver', name: 'Driver Portal', password: 'demo-driver', role: 'DRIVER' },
-  { id: 'seed-viewer', email: 'viewer@fleet.com', name: 'Accounting Viewer', password: 'demo-viewer', role: 'READ_ONLY' },
+  { id: 'seed-viewer', email: 'viewer@fleet.com', username: 'viewer', name: 'Accounting Viewer', password: 'demo-viewer', role: 'READ_ONLY' },
 ]
 
 try {
   await prisma.user.createMany({ data: demoUsers, skipDuplicates: true })
+
+  // Backfill username-only sign-ins for existing administrator, manager, and viewer accounts.
+  const staffUsers = await prisma.user.findMany({ where: { role: { not: 'DRIVER' }, deletedAt: null, username: null } })
+  for (const staffUser of staffUsers) {
+    const base = (staffUser.email?.split('@')[0] || staffUser.name).toLowerCase().trim().replace(/[^a-z0-9._-]+/g, '-') || 'user'
+    let username = base
+    const duplicate = await prisma.user.findFirst({ where: { username: { equals: username, mode: 'insensitive' }, id: { not: staffUser.id }, deletedAt: null } })
+    if (duplicate) username = `${base}.${staffUser.id.toLowerCase()}`
+    await prisma.user.update({ where: { id: staffUser.id }, data: { username } })
+  }
+
   const demoDriverAccount = await prisma.user.findFirst({ where: { OR: [{ id: 'seed-driver' }, { email: 'driver@fleet.com' }] } })
   if (demoDriverAccount && !demoDriverAccount.username) {
     await prisma.user.update({ where: { id: demoDriverAccount.id }, data: { username: 'driver' } })

@@ -15,16 +15,16 @@ async function main() {
 
   // === Users ===
   const admin = await db.user.create({
-    data: { email: 'admin@fleet.com', name: 'Fleet Admin', password: 'demo-admin', role: 'ADMIN' },
+    data: { email: 'admin@fleet.com', username: 'admin', name: 'Fleet Admin', password: 'demo-admin', role: 'ADMIN' },
   })
   const manager = await db.user.create({
-    data: { email: 'manager@fleet.com', name: 'Operation Manager', password: 'demo-manager', role: 'MANAGER' },
+    data: { email: 'manager@fleet.com', username: 'manager', name: 'Operation Manager', password: 'demo-manager', role: 'MANAGER' },
   })
   const driverUser = await db.user.create({
-    data: { email: 'driver@fleet.com', name: 'Driver Portal', password: 'demo-driver', role: 'DRIVER' },
+    data: { email: 'driver@fleet.com', username: 'driver', name: 'Driver Portal', password: 'demo-driver', role: 'DRIVER' },
   })
   const readOnly = await db.user.create({
-    data: { email: 'viewer@fleet.com', name: 'Accounting Viewer', password: 'demo-viewer', role: 'READ_ONLY' },
+    data: { email: 'viewer@fleet.com', username: 'viewer', name: 'Accounting Viewer', password: 'demo-viewer', role: 'READ_ONLY' },
   })
 
   // === Drivers ===
@@ -38,6 +38,7 @@ async function main() {
   for (const d of driversData) {
     drivers.push(await db.driver.create({ data: d }))
   }
+  await db.driver.update({ where: { id: drivers[0].id }, data: { userId: driverUser.id } })
 
   // === Vehicles ===
   const vehiclesData = [

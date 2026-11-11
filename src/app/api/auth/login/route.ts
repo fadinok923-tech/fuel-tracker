@@ -5,18 +5,15 @@ import { putAudit } from '@/lib/audit'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const identifier = String(body.identifier ?? body.email ?? body.username ?? '').trim()
+  const username = String(body.username ?? '').trim()
   const password = String(body.password ?? '')
-  if (!identifier || !password) {
-    return NextResponse.json({ error: 'Username or email and password required' }, { status: 400 })
+  if (!username || !password) {
+    return NextResponse.json({ error: 'Username and password required' }, { status: 400 })
   }
 
   const user = await db.user.findFirst({
     where: {
-      OR: [
-        { username: { equals: identifier, mode: 'insensitive' } },
-        { email: { equals: identifier, mode: 'insensitive' } },
-      ],
+      username: { equals: username, mode: 'insensitive' },
       active: true,
       deletedAt: null,
     },
@@ -25,7 +22,7 @@ export async function POST(req: NextRequest) {
 
   if (!user || !verifyPassword(password, user.password) ||
     (user.role === 'DRIVER' && (!user.driverProfile || user.driverProfile.deletedAt || user.driverProfile.status !== 'ACTIVE'))) {
-    return NextResponse.json({ error: 'Invalid username/email or password' }, { status: 401 })
+    return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 })
   }
 
   if (!user.password.startsWith('scrypt$')) {

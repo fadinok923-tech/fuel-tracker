@@ -30,17 +30,17 @@ export function UsersView() {
   const [users, setUsers] = useState<any[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
-  const [form, setForm] = useState<any>({ name: '', email: '', password: '', role: 'MANAGER', active: true })
+  const [form, setForm] = useState<any>({ name: '', username: '', email: '', password: '', role: 'MANAGER', active: true })
 
   const load = () => api('/api/users').then(d => setUsers(d.users))
   useEffect(() => { load() }, [])
 
-  const openAdd = () => { setEditing(null); setForm({ name: '', email: '', password: '', role: 'MANAGER', active: true }); setModalOpen(true) }
+  const openAdd = () => { setEditing(null); setForm({ name: '', username: '', email: '', password: '', role: 'MANAGER', active: true }); setModalOpen(true) }
   const openEdit = (u: any) => { setEditing(u); setForm({ ...u, password: '' }); setModalOpen(true) }
 
   const save = async () => {
     try {
-      if (!editing && (!form.name || !form.email || !form.password)) { toast.error('Fill all required fields'); return }
+      if (!editing && (!form.name || !form.username || !form.password)) { toast.error('Enter a name, username, and password'); return }
       const payload = { ...form, userId: user?.id }
       if (editing) {
         if (!form.password) delete payload.password
@@ -56,7 +56,7 @@ export function UsersView() {
 
   const remove = async (u: any) => {
     if (u.id === user?.id) { toast.error('Cannot delete yourself'); return }
-    if (!confirm(`Deactivate ${u.email}?`)) return
+    if (!confirm(`Deactivate ${u.username}?`)) return
     await api(`/api/users/${u.id}?userId=${user?.id}`, { method: 'DELETE' })
     toast.success('User deactivated'); load()
   }
@@ -157,7 +157,8 @@ export function UsersView() {
           <DialogHeader><DialogTitle className="flex items-center gap-2"><UserCog className="size-4" /> {editing ? 'Edit User' : 'Add User'}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5"><Label className="text-xs">Full Name *</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label className="text-xs">Email *</Label><Input type="email" value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Username *</Label><Input value={form.username || ''} onChange={e => setForm({ ...form, username: e.target.value })} autoComplete="off" /></div>
+            <div className="space-y-1.5"><Label className="text-xs">Email (optional contact)</Label><Input type="email" value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">{editing ? 'New Password (leave blank to keep)' : 'Password *'}</Label><Input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Role</Label>
               <Select value={form.role} onValueChange={v => setForm({ ...form, role: v })}>
