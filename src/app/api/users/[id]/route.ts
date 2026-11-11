@@ -12,9 +12,17 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const existing = await db.user.findUnique({ where: { id } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (existing.role === 'DRIVER' || body.role === 'DRIVER') return NextResponse.json({ error: 'Manage driver accounts from the Drivers page' }, { status: 400 })
+  if (body.username !== undefined) {
+    const username = String(body.username).trim()
+    if (!username) return NextResponse.json({ error: 'Username is required' }, { status: 400 })
+    const duplicate = await db.user.findFirst({ where: { username: { equals: username, mode: 'insensitive' }, id: { not: id }, deletedAt: null } })
+    if (duplicate) return NextResponse.json({ error: 'Username already exists' }, { status: 409 })
+    body.username = username
+  }
 
   const data: any = {}
   if (body.name !== undefined) data.name = body.name
+  if (body.username !== undefined) data.username = body.username
   if (body.email !== undefined) data.email = body.email || null
   if (body.active !== undefined) data.active = Boolean(body.active)
   if (body.role !== undefined) data.role = body.role

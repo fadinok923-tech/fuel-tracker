@@ -20,16 +20,23 @@ export async function POST(req: NextRequest) {
   if (!actor) return unauthorizedResponse()
   if (!isAdmin(actor)) return forbiddenResponse()
   const body = await req.json()
-  const { name, email, password, role, active } = body
-  if (!name || !password || !role || role === 'DRIVER' || !email) {
-    return NextResponse.json({ error: 'Staff accounts require a name, email, password, and non-driver role. Create drivers from the Drivers page.' }, { status: 400 })
+  const { name, username, email, password, role, active } = body
+  if (!name || !username || !password || !role || role === 'DRIVER') {
+    return NextResponse.json({ error: 'Staff accounts require a name, username, password, and non-driver role. Create drivers from the Drivers page.' }, { status: 400 })
   }
-  const duplicate = await db.user.findFirst({ where: { email: { equals: email.trim(), mode: 'insensitive' }, deletedAt: null } })
-  if (duplicate) return NextResponse.json({ error: 'Email already exists' }, { status: 409 })
+  const normalizedUsername = String(username).trim()
+  if (!normalizedUsername) return NextResponse.json({ error: 'Username is required' }, { status: 400 })
+  const duplicateUsername = await db.user.findFirst({ where: { username: { equals: normalizedUsername, mode: 'insensitive' }, deletedAt: null } })
+  if (duplicateUsername) return NextResponse.json({ error: 'Username already exists' }, { status: 409 })
+  const normalizedEmail = String(email || '').trim() || null
+  if (normalizedEmail) {
+    const duplicateEmail = await db.user.findFirst({ where: { email: { equals: normalizedEmail, mode: 'insensitive' }, deletedAt: null } })
+    if (duplicateEmail) return NextResponse.json({ error: 'Email already exists' }, { status: 409 })
+  }
   const user = await db.user.create({
-    data: { name, email: email.trim(), password: hashPassword(String(password)), role, active: active !== false },
+    data: { name, username: normalizedUsername, email: normalizedEmail, password: hashPassword(String(password)), role, active: active !== false },
     select: { id: true, email: true, username: true, name: true, role: true, active: true, createdAt: true },
   })
-  await putAudit({ userId: actor.id, action: 'CREATE', entity: 'User', entityId: user.id, details: `Created ${user.email} (${user.role})` })
+  await putAudit({ userId: actor.id, action: 'CREATE', entity: 'User', entityId: user.id, details: `Created ${user.username} (${user.role})` })
   return NextResponse.json({ user })
 }

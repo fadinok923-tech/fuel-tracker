@@ -1,27 +1,19 @@
 'use client'
 import { useState } from 'react'
 import { useAuth, useUI } from '@/lib/store'
-import { PERMISSIONS, DEMO_USERS, type ViewKey, type Role } from '@/lib/types'
 import { api } from '@/lib/fleet'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Truck, Eye, User, Shield, Wrench, ArrowRight } from 'lucide-react'
+import { Truck, User, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
-
-const ROLE_ICONS: Record<Role, typeof Truck> = {
-  ADMIN: Shield,
-  MANAGER: Wrench,
-  DRIVER: Truck,
-  READ_ONLY: Eye,
-}
 
 export function LoginScreen() {
   const { setUser } = useAuth()
   const { setView } = useUI()
-  const [identifier, setIdentifier] = useState('admin@fleet.com')
-  const [password, setPassword] = useState('demo-admin')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
@@ -30,7 +22,7 @@ export function LoginScreen() {
     try {
       const data = await api('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ identifier, password }),
+        body: JSON.stringify({ username, password }),
       })
       setUser(data.user)
       setView('dashboard')
@@ -40,15 +32,6 @@ export function LoginScreen() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const quickLogin = (u: typeof DEMO_USERS[number]) => {
-    setIdentifier(u.role === 'DRIVER' ? (u.username || u.name) : u.email)
-    setPassword(u.password)
-    setTimeout(() => {
-      const form = document.getElementById('login-form') as HTMLFormElement
-      form?.requestSubmit()
-    }, 100)
   }
 
   return (
@@ -92,15 +75,13 @@ export function LoginScreen() {
         <Card className="w-full shadow-xl border-border/60">
           <CardHeader>
             <CardTitle className="text-2xl">Sign in to your account</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Choose a role below to instantly explore the platform.
-            </p>
+            <p className="text-sm text-muted-foreground">Sign in with the username and password assigned to your account.</p>
           </CardHeader>
           <CardContent>
             <form id="login-form" onSubmit={submit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="identifier">Username or email</Label>
-                <Input id="identifier" type="text" value={identifier} onChange={e => setIdentifier(e.target.value)} required autoComplete="username" placeholder="Enter your username or email" />
+                <Label htmlFor="username">Username</Label>
+                <Input id="username" type="text" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="username" placeholder="Enter your username" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
@@ -110,34 +91,6 @@ export function LoginScreen() {
                 {loading ? 'Signing in…' : <>Sign in <ArrowRight className="size-4 ml-2" /></>}
               </Button>
             </form>
-
-            <div className="mt-6">
-              <div className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wider">
-                Quick demo access
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {DEMO_USERS.map(u => {
-                  const Icon = ROLE_ICONS[u.role]
-              const allowed = PERMISSIONS[u.role].views
-              return (
-                <button
-                  key={u.email}
-                  onClick={() => quickLogin(u)}
-                  type="button"
-                  className="flex flex-col items-start gap-1 p-3 rounded-lg border border-border hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="size-7 rounded-md bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 grid place-items-center">
-                      <Icon className="size-3.5" />
-                    </div>
-                    <span className="text-xs font-medium">{u.name.split(' ')[0]}</span>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground">{allowed.length} views</span>
-                </button>
-              )
-                })}
-              </div>
-            </div>
 
             <div className="mt-6 pt-4 border-t border-border text-xs text-muted-foreground flex items-center gap-2">
               <User className="size-3" />
