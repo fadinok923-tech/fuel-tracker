@@ -27,6 +27,16 @@ if (process.env.VERCEL_ENV === 'production') {
   if (!migrationUrl) {
     throw new Error('Set DATABASE_URL_UNPOOLED or DATABASE_URL for production migrations.')
   }
+
+  const databaseIdentity = (connectionString) => {
+    const url = new URL(connectionString)
+    const hostname = url.hostname.replace(/-pooler(?=\.c-\d+\.)/, '')
+    return `${hostname}${url.pathname}`
+  }
+  if (process.env.DATABASE_URL && databaseIdentity(process.env.DATABASE_URL) !== databaseIdentity(migrationUrl)) {
+    throw new Error('DATABASE_URL and DATABASE_URL_UNPOOLED must point to the same Neon database branch.')
+  }
+
   const migrationEnv = { ...process.env, DATABASE_URL: migrationUrl }
 
   // This Neon database already contains the app schema. Prisma Migrate needs
