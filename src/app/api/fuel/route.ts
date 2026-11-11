@@ -18,7 +18,6 @@ export async function GET(req: NextRequest) {
   if (driverId) where.driverId = driverId
   if (user.role === 'DRIVER') {
     where.driverId = user.driverProfile!.id
-    where.vehicleId = user.driverProfile!.assignedVehicleId || '__unassigned__'
   }
   if (from || to) {
     where.date = {}
@@ -68,7 +67,7 @@ export async function POST(req: NextRequest) {
 
   // Find previous fuel entry for this vehicle (most recent by odometer OR date)
   const prev = await db.fuelEntry.findFirst({
-    where: { vehicleId, deletedAt: null, odometer: { lte: Number(odometer) } },
+    where: { vehicleId, deletedAt: null, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}), odometer: { lte: Number(odometer) } },
     orderBy: { date: 'desc' },
   })
   // Also check that odometer >= vehicle.currentOdometer (allow equal for first fill)

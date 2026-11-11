@@ -9,13 +9,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useAuth } from '@/lib/store'
+import { useAuth, useUI } from '@/lib/store'
 import { PERMISSIONS, ROLE_LABELS, type Role } from '@/lib/types'
 import { api, fmtDate } from '@/lib/fleet'
 import { Shield, Plus, Edit, Trash2, UserCog } from 'lucide-react'
 import { toast } from 'sonner'
 
-const ROLES: Role[] = ['ADMIN', 'MANAGER', 'READ_ONLY']
+const ROLES: Role[] = ['ADMIN', 'MANAGER', 'DRIVER', 'READ_ONLY']
 
 const ROLE_PERMISSIONS_MATRIX = [
   { role: 'ADMIN' as Role, views: 'All 12 views', edit: true, delete: true, manage: true },
@@ -26,21 +26,27 @@ const ROLE_PERMISSIONS_MATRIX = [
 
 export function UsersView() {
   const { user } = useAuth()
+  const { setView } = useUI()
   const canManage = user ? PERMISSIONS[user.role].canManageUsers : false
   const [users, setUsers] = useState<any[]>([])
+  const [unlinkedDrivers, setUnlinkedDrivers] = useState<any[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
-  const [form, setForm] = useState<any>({ name: '', username: '', email: '', password: '', role: 'MANAGER', active: true })
+  const [form, setForm] = useState<any>({ name: '', username: '', email: '', password: '', role: 'MANAGER', active: true, driverProfileId: '' })
 
-  const load = () => api('/api/users').then(d => setUsers(d.users))
+  const load = () => Promise.all([api('/api/users'), api('/api/drivers')]).then(([u, d]) => {
+    setUsers(u.users)
+    setUnlinkedDrivers(d.drivers.filter((driver: any) => !driver.user?.id && driver.status === 'ACTIVE'))
+  })
   useEffect(() => { load() }, [])
 
-  const openAdd = () => { setEditing(null); setForm({ name: '', username: '', email: '', password: '', role: 'MANAGER', active: true }); setModalOpen(true) }
+  const openAdd = () => { setEditing(null); setForm({ name: '', username: '', email: '', password: '', role: 'MANAGER', active: true, driverProfileId: '' }); setModalOpen(true) }
   const openEdit = (u: any) => { setEditing(u); setForm({ ...u, password: '' }); setModalOpen(true) }
 
   const save = async () => {
     try {
       if (!editing && (!form.name || !form.username || !form.password)) { toast.error('Enter a name, username, and password'); return }
+      if (!editing && form.role === 'DRIVER' && !form.driverProfileId) { toast.error('Select a driver profile to link this login to'); return }
       const payload = { ...form, userId: user?.id }
       if (editing) {
         if (!form.password) delete payload.password
@@ -166,6 +172,20 @@ export function UsersView() {
                 <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>)}</SelectContent>
               </Select>
             </div>
+            {!editing && form.role === 'DRIVER' && <div className="space-y-1.5">
+              <Label className="text-xs">Driver profile *</Label>
+              <Select value={form.driverProfileId || 'none'} onValueChange={v => {
+                const driver = unlinkedDrivers.find(d => d.id === v)
+                setForm({ ...form, driverProfileId: v === 'none' ? '' : v, name: driver?.name || form.name })
+              }}>
+                <SelectTrigger><SelectValue placeholder="Choose a driver" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select a driver</SelectItem>
+                  {unlinkedDrivers.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {unlinkedDrivers.length === 0 && <div className="text-xs text-muted-foreground">Create a driver profile first in Drivers, then return here to assign its login.</div>}
+            </div>}
             <div className="flex items-center justify-between p-3 rounded-lg border">
               <div><div className="text-sm font-medium">Active Account</div><div className="text-xs text-muted-foreground">Inactive users cannot log in</div></div>
               <Switch checked={form.active} onCheckedChange={v => setForm({ ...form, active: v })} />
@@ -173,6 +193,7 @@ export function UsersView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
+            {!editing && form.role === 'DRIVER' && unlinkedDrivers.length === 0 && <Button variant="outline" onClick={() => { setModalOpen(false); setView('drivers') }}>Go to Drivers</Button>}
             <Button onClick={save} className="bg-emerald-600 hover:bg-emerald-700">{editing ? 'Update' : 'Create'} User</Button>
           </DialogFooter>
         </DialogContent>

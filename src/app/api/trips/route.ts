@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
   if (driverId) where.driverId = driverId
   if (user.role === 'DRIVER') {
     where.driverId = user.driverProfile!.id
-    where.vehicleId = user.driverProfile!.assignedVehicleId || '__unassigned__'
   }
   if (customer) where.customer = { contains: customer }
   if (from || to) {
