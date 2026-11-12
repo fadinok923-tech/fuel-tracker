@@ -53,7 +53,7 @@ export function DriverQuickView() {
 
   // Fuel form
   const [fuelForm, setFuelForm] = useState<any>({
-    date: today(), vehicleId: '', driverId: '', odometer: '', liters: '', pricePerLiter: '', fuelStation: '', invoiceNumber: '', paymentMethod: 'FLEET_CARD', receiptImage: '',
+    date: today(), vehicleId: '', driverId: '', odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', paymentMethod: 'FLEET_CARD', receiptImage: '',
   })
   // Trip form
   const [tripForm, setTripForm] = useState<any>({
@@ -78,14 +78,16 @@ export function DriverQuickView() {
   useEffect(() => { load() }, [])
 
   const fuelCalc = (() => {
-    const liters = parseFloat(fuelForm.liters) || 0
+    const enteredLiters = parseFloat(fuelForm.liters) || 0
     const price = parseFloat(fuelForm.pricePerLiter) || 0
-    const total = +(liters * price).toFixed(2)
+    const enteredTotal = parseFloat(fuelForm.totalCost) || 0
+    const liters = enteredTotal > 0 && price > 0 ? enteredTotal / price : enteredLiters
+    const total = enteredTotal > 0 ? enteredTotal : +(liters * price).toFixed(2)
     const v = vehicles.find(x => x.id === fuelForm.vehicleId)
     const odo = parseFloat(fuelForm.odometer) || 0
     const prev = v?.currentOdometer || 0
     const dist = odo - prev
-    return { total, dist, prev }
+    return { total, liters, dist, prev }
   })()
 
   const tripCalc = (() => {
@@ -133,6 +135,7 @@ export function DriverQuickView() {
         date: receipt.date || current.date,
         liters: isSar && Number.isFinite(liters) && liters > 0 ? liters.toFixed(3) : current.liters,
         pricePerLiter: pricePerLiter && pricePerLiter > 0 ? pricePerLiter.toFixed(4) : current.pricePerLiter,
+        totalCost: isSar && hasTotal ? totalPaid.toFixed(2) : isSar && liters > 0 && pricePerLiter > 0 ? (liters * pricePerLiter).toFixed(2) : current.totalCost,
         fuelStation: receipt.merchantName || current.fuelStation,
         invoiceNumber: receipt.invoiceNumber || current.invoiceNumber,
         paymentMethod: receipt.paymentMethod || current.paymentMethod,
@@ -148,14 +151,14 @@ export function DriverQuickView() {
   }
 
   const submitFuel = async () => {
-    if (!fuelForm.vehicleId || !fuelForm.odometer || !fuelForm.liters || !fuelForm.pricePerLiter) {
-      toast.error('Please fill all required fields')
+    if (!fuelForm.vehicleId || !fuelForm.odometer || !fuelForm.pricePerLiter || !fuelCalc.total || !fuelCalc.liters) {
+      toast.error('Enter the odometer, price per liter, and total cost')
       return
     }
     try {
-      await api('/api/fuel', { method: 'POST', body: JSON.stringify({ ...fuelForm, userId: user?.id }) })
+      await api('/api/fuel', { method: 'POST', body: JSON.stringify({ ...fuelForm, liters: fuelCalc.liters, totalCost: fuelCalc.total, userId: user?.id }) })
       toast.success(`Fuel logged · ${fmtCurrency(fuelCalc.total)}`)
-      setFuelForm((current: any) => ({ ...current, odometer: '', liters: '', pricePerLiter: '', fuelStation: '', invoiceNumber: '', notes: '', receiptImage: '', paymentMethod: 'FLEET_CARD' }))
+      setFuelForm((current: any) => ({ ...current, odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', notes: '', receiptImage: '', paymentMethod: 'FLEET_CARD' }))
       setReceiptName('')
       setScanNotes([])
       setScanSummary(null)
@@ -273,8 +276,9 @@ export function DriverQuickView() {
               <div className="space-y-1.5 col-span-2"><Label className="text-xs">Odometer Reading (km)</Label>
                 <Input type="number" value={fuelForm.odometer} onChange={e => setFuelForm({ ...fuelForm, odometer: e.target.value })} placeholder={`Previous: ${fuelCalc.prev}`} />
               </div>
-              <div className="space-y-1.5"><Label className="text-xs">Liters</Label><Input type="number" step="0.01" value={fuelForm.liters} onChange={e => setFuelForm({ ...fuelForm, liters: e.target.value })} placeholder="40.5" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Price / Liter (SAR)</Label><Input type="number" step="0.0001" value={fuelForm.pricePerLiter} onChange={e => setFuelForm({ ...fuelForm, pricePerLiter: e.target.value })} placeholder="2.33" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Total Cost (SAR) *</Label><Input type="number" min="0" step="0.01" value={fuelForm.totalCost} onChange={e => setFuelForm({ ...fuelForm, totalCost: e.target.value })} placeholder="100.00" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Price / Liter (SAR) *</Label><Input type="number" min="0" step="0.0001" value={fuelForm.pricePerLiter} onChange={e => setFuelForm({ ...fuelForm, pricePerLiter: e.target.value })} placeholder="2.33" /></div>
+              <div className="col-span-2 -mt-2 text-xs text-muted-foreground">Liters are calculated automatically from total cost ÷ price per liter.</div>
               <div className="space-y-1.5 col-span-2"><Label className="text-xs">Fuel Station (optional)</Label><Input value={fuelForm.fuelStation} onChange={e => setFuelForm({ ...fuelForm, fuelStation: e.target.value })} placeholder="Aramco - Olaya" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Invoice Number</Label><Input value={fuelForm.invoiceNumber} onChange={e => setFuelForm({ ...fuelForm, invoiceNumber: e.target.value })} placeholder="From receipt" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Payment Method</Label>
@@ -296,7 +300,7 @@ export function DriverQuickView() {
               </div>
               <div className="text-center">
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">KM/L</div>
-                <div className="text-lg font-bold font-mono">{fuelCalc.dist > 0 && parseFloat(fuelForm.liters) > 0 ? fmtNumber(fuelCalc.dist / parseFloat(fuelForm.liters), 2) : '—'}</div>
+                <div className="text-lg font-bold font-mono">{fuelCalc.dist > 0 && fuelCalc.liters > 0 ? fmtNumber(fuelCalc.dist / fuelCalc.liters, 2) : '—'}</div>
               </div>
             </div>
 
