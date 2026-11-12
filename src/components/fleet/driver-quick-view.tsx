@@ -109,21 +109,29 @@ export function DriverQuickView() {
       const currency = String(receipt.currency || '').trim().toUpperCase()
       const isSar = !currency || ['SAR', 'SR', 'ر.س', 'ريال', 'ريال سعودي'].includes(currency)
       const totalPaid = Number(receipt.totalPaid)
-      const liters = Number(receipt.liters)
+      const extractedLiters = Number(receipt.liters)
       const printedUnitPrice = Number(receipt.pricePerLiter)
+      const hasTotal = Number.isFinite(totalPaid) && totalPaid > 0
+      const hasPrintedUnitPrice = Number.isFinite(printedUnitPrice) && printedUnitPrice > 0
+      const hasExtractedLiters = Number.isFinite(extractedLiters) && extractedLiters > 0
+      const liters = hasExtractedLiters
+        ? extractedLiters
+        : isSar && hasTotal && hasPrintedUnitPrice ? totalPaid / printedUnitPrice : NaN
+      const litersWereCalculated = !hasExtractedLiters && Number.isFinite(liters) && liters > 0
       const pricePerLiter = isSar && liters > 0
-        ? (Number.isFinite(totalPaid) && totalPaid > 0 ? totalPaid / liters : printedUnitPrice)
+        ? (hasExtractedLiters && hasTotal ? totalPaid / liters : printedUnitPrice)
         : null
       const notes = Array.isArray(receipt.reviewNotes) ? receipt.reviewNotes.filter(Boolean) : []
       if (!isSar) notes.unshift(`This receipt is in ${receipt.currency}; enter the SAR amount manually.`)
-      if (!Number.isFinite(liters) || liters <= 0) notes.unshift('Fuel quantity was not clear enough to read. Enter liters manually.')
-      if (Number.isFinite(totalPaid) && totalPaid > 0 && liters > 0 && Number.isFinite(printedUnitPrice) && printedUnitPrice > 0 && Math.abs(printedUnitPrice * liters - totalPaid) > 0.1) {
+      if (!Number.isFinite(liters) || liters <= 0) notes.unshift('Fuel quantity could not be calculated. Check the bill and enter liters manually.')
+      else if (litersWereCalculated) notes.unshift(`Liters calculated from total paid ÷ price per liter (${totalPaid.toFixed(2)} ÷ ${printedUnitPrice.toFixed(3)}). Verify the result.`)
+      if (hasExtractedLiters && hasTotal && hasPrintedUnitPrice && Math.abs(printedUnitPrice * liters - totalPaid) > 0.1) {
         notes.push('Price per liter was calculated from the final receipt total and liters so the recorded cost matches the bill.')
       }
       setFuelForm((current: any) => ({
         ...current,
         date: receipt.date || current.date,
-        liters: isSar && liters > 0 ? String(liters) : current.liters,
+        liters: isSar && Number.isFinite(liters) && liters > 0 ? liters.toFixed(3) : current.liters,
         pricePerLiter: pricePerLiter && pricePerLiter > 0 ? pricePerLiter.toFixed(4) : current.pricePerLiter,
         fuelStation: receipt.merchantName || current.fuelStation,
         invoiceNumber: receipt.invoiceNumber || current.invoiceNumber,
