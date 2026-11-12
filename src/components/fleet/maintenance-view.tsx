@@ -31,7 +31,10 @@ const TYPE_COLORS: Record<string, string> = {
 export function MaintenanceView() {
   const { user } = useAuth()
   const { searchQuery } = useUI()
-  const canEdit = user ? PERMISSIONS[user.role].canEdit : false
+  const isDriver = user?.role === 'DRIVER'
+  const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER'
+  const canCreate = canEdit || isDriver
+  const availableTypes = isDriver ? TYPES.filter(t => !['INSURANCE', 'REGISTRATION'].includes(t)) : TYPES
 
   const [items, setItems] = useState<any[]>([])
   const [vehicles, setVehicles] = useState<any[]>([])
@@ -47,6 +50,9 @@ export function MaintenanceView() {
     setLoading(true)
     const [m, v] = await Promise.all([api('/api/maintenance'), api('/api/vehicles')])
     setItems(m.items); setVehicles(v.vehicles); setLoading(false)
+    if (user?.role === 'DRIVER' && v.vehicles[0]) {
+      setForm((current: any) => ({ ...current, vehicleId: v.vehicles[0].id }))
+    }
   }
   useEffect(() => { load() }, [])
 
@@ -97,7 +103,7 @@ export function MaintenanceView() {
             {TYPES.map(t => <SelectItem key={t} value={t}>{MAINT_TYPE_LABELS[t]}</SelectItem>)}
           </SelectContent>
         </Select>
-        {canEdit && <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="size-4 mr-1" /> Add Maintenance</Button>}
+        {canCreate && <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700"><Plus className="size-4 mr-1" /> {isDriver ? 'Add Maintenance Entry' : 'Add Maintenance'}</Button>}
       </div>
 
       <Card>
@@ -105,7 +111,7 @@ export function MaintenanceView() {
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading…</div>
           ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground"><Wrench className="size-12 mx-auto mb-2 opacity-30" /> No records found</div>
+            <div className="p-8 text-center text-muted-foreground"><Wrench className="size-12 mx-auto mb-2 opacity-30" /> {isDriver ? 'No maintenance entries from you yet' : 'No records found'}</div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -152,19 +158,19 @@ export function MaintenanceView() {
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-xl">
-          <DialogHeader><DialogTitle>{editing ? 'Edit Maintenance' : 'Add Maintenance Record'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{isDriver ? 'Report Maintenance Entry' : editing ? 'Edit Maintenance' : 'Add Maintenance Record'}</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5"><Label className="text-xs">Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label className="text-xs">Vehicle *</Label>
+            {isDriver ? <div className="space-y-1.5"><Label className="text-xs">Assigned Vehicle</Label><Input value={vehicles.find(v => v.id === form.vehicleId)?.vehicleNumber || 'No vehicle assigned'} readOnly /></div> : <div className="space-y-1.5"><Label className="text-xs">Vehicle *</Label>
               <Select value={form.vehicleId} onValueChange={v => setForm({ ...form, vehicleId: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.vehicleNumber}</SelectItem>)}</SelectContent>
               </Select>
-            </div>
+            </div>}
             <div className="space-y-1.5"><Label className="text-xs">Expense Type *</Label>
               <Select value={form.expenseType} onValueChange={v => setForm({ ...form, expenseType: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{TYPES.map(t => <SelectItem key={t} value={t}>{MAINT_TYPE_LABELS[t]}</SelectItem>)}</SelectContent>
+                <SelectContent>{availableTypes.map(t => <SelectItem key={t} value={t}>{MAINT_TYPE_LABELS[t]}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5"><Label className="text-xs">Amount (SAR) *</Label><Input type="number" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
@@ -174,7 +180,7 @@ export function MaintenanceView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button onClick={save} className="bg-emerald-600 hover:bg-emerald-700">{editing ? 'Update' : 'Create'} Record</Button>
+            <Button onClick={save} className="bg-emerald-600 hover:bg-emerald-700">{isDriver ? 'Submit Entry' : editing ? 'Update' : 'Create'} Record</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

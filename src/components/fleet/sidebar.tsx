@@ -28,7 +28,9 @@ export function Sidebar({ alertsCount = 0, onClose }: { alertsCount?: number; on
 
   if (!user) return null
   const allowedViews = PERMISSIONS[user.role].views
-  const items = NAV.filter(n => allowedViews.includes(n.key))
+  const items = NAV.filter(n => allowedViews.includes(n.key)).map(n => user.role === 'DRIVER' && n.key === 'maintenance'
+    ? { ...n, label: 'Maintenance Entry', group: 'Driver' }
+    : n)
 
   // Group items
   const groups: Record<string, typeof items> = {}

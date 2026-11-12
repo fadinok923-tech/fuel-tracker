@@ -39,7 +39,7 @@ export const PERMISSIONS: Record<Role, {
     canEdit: true, canDelete: true, canManageUsers: false,
   },
   DRIVER: {
-    views: ['dashboard','driver-quick','fuel','alerts'],
+    views: ['dashboard','driver-quick','fuel','maintenance','alerts'],
     canEdit: true, canDelete: false, canManageUsers: false,
   },
   READ_ONLY: {
