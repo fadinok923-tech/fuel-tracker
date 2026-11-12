@@ -6,14 +6,16 @@ import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } fr
 export async function GET(req: NextRequest) {
   const user = await getRequestUser(req)
   if (!user) return unauthorizedResponse()
-  if (!isManager(user)) return forbiddenResponse()
+  if (!isManager(user) && user.role !== 'DRIVER') return forbiddenResponse()
   const { searchParams } = new URL(req.url)
   const vehicleId = searchParams.get('vehicleId')
   const expenseType = searchParams.get('expenseType')
   const from = searchParams.get('from')
   const to = searchParams.get('to')
 
-  const where: any = { deletedAt: null }
+  const where: any = user.role === 'DRIVER'
+    ? { deletedAt: null, userId: user.id, vehicleId: user.driverProfile!.assignedVehicleId || '__unassigned__' }
+    : { deletedAt: null }
   if (vehicleId) where.vehicleId = vehicleId
   if (expenseType) where.expenseType = expenseType
   if (from || to) {
@@ -33,12 +35,25 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getRequestUser(req)
   if (!user) return unauthorizedResponse()
-  if (!isManager(user)) return forbiddenResponse()
+  if (!isManager(user) && user.role !== 'DRIVER') return forbiddenResponse()
   const body = await req.json()
-  const { date, vehicleId, expenseType, amount, workshop, invoiceNumber, notes, invoiceImage } = body
+  let { date, vehicleId, expenseType, amount, workshop, invoiceNumber, notes, invoiceImage } = body
+
+  if (user.role === 'DRIVER') {
+    const allowedDriverTypes = ['OIL_CHANGE', 'TYRES', 'BATTERY', 'BRAKE_SERVICE', 'REPAIRS', 'UNEXPECTED', 'OTHER']
+    if (!user.driverProfile?.assignedVehicleId) return forbiddenResponse()
+    vehicleId = user.driverProfile.assignedVehicleId
+    if (!allowedDriverTypes.includes(expenseType)) {
+      return NextResponse.json({ error: 'Choose a maintenance or repair type. Insurance and registration records are managed by fleet staff.' }, { status: 400 })
+    }
+  }
 
   if (!vehicleId || !expenseType || amount == null) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+  const amountValue = Number(amount)
+  if (!Number.isFinite(amountValue) || amountValue < 0 || (user.role === 'DRIVER' && amountValue === 0)) {
+    return NextResponse.json({ error: 'Enter a maintenance amount greater than zero' }, { status: 400 })
   }
 
   const invoice = String(invoiceNumber || '').trim()
@@ -50,7 +65,7 @@ export async function POST(req: NextRequest) {
   const item = await db.maintenance.create({
     data: {
       date: date ? new Date(date) : new Date(),
-      vehicleId, expenseType, amount: Number(amount),
+      vehicleId, expenseType, amount: amountValue,
       workshop, invoiceNumber: invoice || null, notes, invoiceImage, userId: user.id,
     },
     include: { vehicle: true },
