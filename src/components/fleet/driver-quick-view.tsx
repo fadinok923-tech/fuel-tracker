@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,10 +7,37 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
 import { useAuth } from '@/lib/store'
-import { Zap, Fuel, Route, Gauge, CheckCircle2, TrendingUp, History } from 'lucide-react'
+import { Zap, Fuel, Route, Gauge, CheckCircle2, TrendingUp, History, ScanLine, Upload, Sparkles, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 const today = () => new Date().toISOString().split('T')[0]
+
+async function compressReceipt(file: File) {
+  if (!file.type.startsWith('image/')) throw new Error('Choose a receipt photo (JPG, PNG, or WebP).')
+  if (file.size > 15 * 1024 * 1024) throw new Error('Choose a receipt image smaller than 15 MB.')
+  const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Could not prepare this receipt image.')
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+
+  const toBlob = (quality: number) => new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not prepare this receipt image.')), 'image/jpeg', quality)
+  })
+  let blob = await toBlob(0.84)
+  if (blob.size > 2 * 1024 * 1024) blob = await toBlob(0.68)
+  if (blob.size > 2 * 1024 * 1024) throw new Error('This receipt image is too large. Choose a smaller or clearer photo.')
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Could not read this receipt image.'))
+    reader.readAsDataURL(blob)
+  })
+}
 
 export function DriverQuickView() {
   const { user } = useAuth()
@@ -18,10 +45,15 @@ export function DriverQuickView() {
   const [drivers, setDrivers] = useState<any[]>([])
   const [recent, setRecent] = useState<any[]>([])
   const [tab, setTab] = useState<'fuel' | 'trip'>('fuel')
+  const [scanning, setScanning] = useState(false)
+  const [receiptName, setReceiptName] = useState('')
+  const [scanNotes, setScanNotes] = useState<string[]>([])
+  const [scanSummary, setScanSummary] = useState<any | null>(null)
+  const receiptInput = useRef<HTMLInputElement>(null)
 
   // Fuel form
   const [fuelForm, setFuelForm] = useState<any>({
-    date: today(), vehicleId: '', driverId: '', odometer: '', liters: '', pricePerLiter: '', fuelStation: '',
+    date: today(), vehicleId: '', driverId: '', odometer: '', liters: '', pricePerLiter: '', fuelStation: '', invoiceNumber: '', paymentMethod: 'FLEET_CARD', receiptImage: '',
   })
   // Trip form
   const [tripForm, setTripForm] = useState<any>({
@@ -62,15 +94,63 @@ export function DriverQuickView() {
     return { distance: e - s, valid: e >= s && s > 0 }
   })()
 
+  const scanReceipt = async () => {
+    if (!fuelForm.receiptImage) {
+      toast.error('Choose a fuel receipt image first')
+      return
+    }
+    setScanning(true)
+    setScanNotes([])
+    try {
+      const { receipt } = await api('/api/fuel/scan', {
+        method: 'POST',
+        body: JSON.stringify({ image: fuelForm.receiptImage }),
+      })
+      const currency = String(receipt.currency || '').trim().toUpperCase()
+      const isSar = !currency || ['SAR', 'SR', 'ر.س', 'ريال', 'ريال سعودي'].includes(currency)
+      const totalPaid = Number(receipt.totalPaid)
+      const liters = Number(receipt.liters)
+      const printedUnitPrice = Number(receipt.pricePerLiter)
+      const pricePerLiter = isSar && liters > 0
+        ? (Number.isFinite(totalPaid) && totalPaid > 0 ? totalPaid / liters : printedUnitPrice)
+        : null
+      const notes = Array.isArray(receipt.reviewNotes) ? receipt.reviewNotes.filter(Boolean) : []
+      if (!isSar) notes.unshift(`This receipt is in ${receipt.currency}; enter the SAR amount manually.`)
+      if (!Number.isFinite(liters) || liters <= 0) notes.unshift('Fuel quantity was not clear enough to read. Enter liters manually.')
+      if (Number.isFinite(totalPaid) && totalPaid > 0 && liters > 0 && Number.isFinite(printedUnitPrice) && printedUnitPrice > 0 && Math.abs(printedUnitPrice * liters - totalPaid) > 0.1) {
+        notes.push('Price per liter was calculated from the final receipt total and liters so the recorded cost matches the bill.')
+      }
+      setFuelForm((current: any) => ({
+        ...current,
+        date: receipt.date || current.date,
+        liters: isSar && liters > 0 ? String(liters) : current.liters,
+        pricePerLiter: pricePerLiter && pricePerLiter > 0 ? pricePerLiter.toFixed(4) : current.pricePerLiter,
+        fuelStation: receipt.merchantName || current.fuelStation,
+        invoiceNumber: receipt.invoiceNumber || current.invoiceNumber,
+        paymentMethod: receipt.paymentMethod || current.paymentMethod,
+      }))
+      setScanNotes(notes)
+      setScanSummary(receipt)
+      toast.success('Bill scanned. Review every suggested value before submitting.')
+    } catch (error: any) {
+      toast.error(error.message || 'Could not read this receipt')
+    } finally {
+      setScanning(false)
+    }
+  }
+
   const submitFuel = async () => {
     if (!fuelForm.vehicleId || !fuelForm.odometer || !fuelForm.liters || !fuelForm.pricePerLiter) {
       toast.error('Please fill all required fields')
       return
     }
     try {
-      await api('/api/fuel', { method: 'POST', body: JSON.stringify({ ...fuelForm, paymentMethod: 'FLEET_CARD', userId: user?.id }) })
+      await api('/api/fuel', { method: 'POST', body: JSON.stringify({ ...fuelForm, userId: user?.id }) })
       toast.success(`Fuel logged · ${fmtCurrency(fuelCalc.total)}`)
-      setFuelForm({ ...fuelForm, odometer: '', liters: '', pricePerLiter: '', fuelStation: '' })
+      setFuelForm((current: any) => ({ ...current, odometer: '', liters: '', pricePerLiter: '', fuelStation: '', invoiceNumber: '', notes: '', receiptImage: '', paymentMethod: 'FLEET_CARD' }))
+      setReceiptName('')
+      setScanNotes([])
+      setScanSummary(null)
       load()
     } catch (e: any) { toast.error(e.message) }
   }
@@ -122,9 +202,55 @@ export function DriverQuickView() {
       {tab === 'fuel' ? (
         <Card>
           <CardHeader><CardTitle className="text-base">Log Fuel Fill</CardTitle>
-            <CardDescription>Just 4 fields: date, odometer, liters, price. We auto-calculate everything else.</CardDescription>
+            <CardDescription>Scan a fuel bill to fill the details, then check them before saving.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"><ScanLine className="size-4" /></div>
+                <div>
+                  <div className="text-sm font-semibold">AI bill scanning</div>
+                  <div className="text-xs text-muted-foreground">Upload a Gulf, Purein, or other fuel receipt in English or Arabic. AI sends the photo to Vercel AI Gateway to read it. Review every suggestion before submitting.</div>
+                </div>
+              </div>
+              <input ref={receiptInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={async e => {
+                const input = e.currentTarget
+                const file = input.files?.[0]
+                input.value = ''
+                if (!file) return
+                try {
+                  const receiptImage = await compressReceipt(file)
+                  setFuelForm((current: any) => ({ ...current, receiptImage }))
+                  setReceiptName(file.name)
+                  setScanNotes([])
+                  setScanSummary(null)
+                } catch (error: any) {
+                  toast.error(error.message || 'Could not read this receipt image')
+                }
+              }} />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => receiptInput.current?.click()} disabled={scanning}>
+                  <Upload className="mr-2 size-4" /> {fuelForm.receiptImage ? 'Change receipt photo' : 'Choose receipt photo'}
+                </Button>
+                <Button type="button" onClick={scanReceipt} disabled={!fuelForm.receiptImage || scanning} className="bg-emerald-600 hover:bg-emerald-700">
+                  {scanning ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Sparkles className="mr-2 size-4" />}
+                  {scanning ? 'Reading bill…' : 'Scan bill'}
+                </Button>
+                {receiptName && <span className="text-xs text-muted-foreground">{receiptName}</span>}
+              </div>
+              {fuelForm.receiptImage && <div className="flex items-start gap-3 rounded-md bg-background p-2">
+                <img src={fuelForm.receiptImage} alt="Selected fuel receipt" className="max-h-40 max-w-28 rounded border object-contain" />
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <div>Receipt photo will be attached when you submit the fuel entry.</div>
+                  <div>The scan only suggests values; nothing is saved until you submit.</div>
+                </div>
+              </div>}
+              {scanSummary && <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs dark:border-emerald-900 dark:bg-emerald-950/30">
+                <div className="font-semibold text-emerald-800 dark:text-emerald-300">Receipt scan result — verify against the photo</div>
+                {scanSummary.totalPaid != null && <div className="mt-1">Final total: {Number(scanSummary.totalPaid).toFixed(2)} {scanSummary.currency || ''}{scanSummary.vatAmount != null ? ` · VAT ${Number(scanSummary.vatAmount).toFixed(2)}${scanSummary.vatRate != null ? ` (${Number(scanSummary.vatRate)}%)` : ''}` : ''}</div>}
+                {scanNotes.map((note, index) => <div key={index} className="mt-1">• {note}</div>)}
+              </div>}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5"><Label className="text-xs">Date</Label><Input type="date" value={fuelForm.date} onChange={e => setFuelForm({ ...fuelForm, date: e.target.value })} /></div>
               <div className="space-y-1.5"><Label className="text-xs">Vehicle</Label>
@@ -140,8 +266,15 @@ export function DriverQuickView() {
                 <Input type="number" value={fuelForm.odometer} onChange={e => setFuelForm({ ...fuelForm, odometer: e.target.value })} placeholder={`Previous: ${fuelCalc.prev}`} />
               </div>
               <div className="space-y-1.5"><Label className="text-xs">Liters</Label><Input type="number" step="0.01" value={fuelForm.liters} onChange={e => setFuelForm({ ...fuelForm, liters: e.target.value })} placeholder="40.5" /></div>
-              <div className="space-y-1.5"><Label className="text-xs">Price / Liter (SAR)</Label><Input type="number" step="0.01" value={fuelForm.pricePerLiter} onChange={e => setFuelForm({ ...fuelForm, pricePerLiter: e.target.value })} placeholder="2.33" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Price / Liter (SAR)</Label><Input type="number" step="0.0001" value={fuelForm.pricePerLiter} onChange={e => setFuelForm({ ...fuelForm, pricePerLiter: e.target.value })} placeholder="2.33" /></div>
               <div className="space-y-1.5 col-span-2"><Label className="text-xs">Fuel Station (optional)</Label><Input value={fuelForm.fuelStation} onChange={e => setFuelForm({ ...fuelForm, fuelStation: e.target.value })} placeholder="Aramco - Olaya" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Invoice Number</Label><Input value={fuelForm.invoiceNumber} onChange={e => setFuelForm({ ...fuelForm, invoiceNumber: e.target.value })} placeholder="From receipt" /></div>
+              <div className="space-y-1.5"><Label className="text-xs">Payment Method</Label>
+                <Select value={fuelForm.paymentMethod} onValueChange={v => setFuelForm({ ...fuelForm, paymentMethod: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{['CASH', 'CARD', 'BANK_TRANSFER', 'FLEET_CARD', 'UPI', 'OTHER'].map(method => <SelectItem key={method} value={method}>{method.replace('_', ' ')}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900">
