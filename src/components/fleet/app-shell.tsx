@@ -72,7 +72,7 @@ export function AppShell() {
   return (
     <div className="min-h-screen flex bg-background">
       {/* Desktop sidebar */}
-      <div className="hidden lg:flex">
+      <div className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0">
         <Sidebar alertsCount={alertsCount} />
       </div>
 

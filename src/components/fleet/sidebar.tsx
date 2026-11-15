@@ -41,7 +41,7 @@ export function Sidebar({ alertsCount = 0, onClose }: { alertsCount?: number; on
   }
 
   return (
-    <aside className="h-full w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
+    <aside className="h-full min-h-0 w-64 bg-sidebar border-r border-sidebar-border flex flex-col">
       {/* Brand */}
       <div className="px-5 py-5 border-b border-sidebar-border">
         <div className="flex items-center gap-3">
@@ -56,7 +56,7 @@ export function Sidebar({ alertsCount = 0, onClose }: { alertsCount?: number; on
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin">
         {Object.entries(groups).map(([group, groupItems]) => (
           <div key={group}>
             <div className="px-3 mb-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
