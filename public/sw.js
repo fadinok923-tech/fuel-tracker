@@ -1,5 +1,5 @@
 const CACHE_NAME = "tanoor-fleet-static-v1";
-const STATIC_PATHS = ["/manifest.webmanifest", "/icons/tanoor.svg"];
+const STATIC_PATHS = ["/manifest.webmanifest", "/icons/tanoor-192.png", "/icons/tanoor-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_PATHS)));

@@ -28,8 +28,11 @@ export const metadata: Metadata = {
     title: "Tanoor Fleet",
   },
   icons: {
-    icon: [{ url: "/icons/tanoor.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/icons/tanoor.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/icons/tanoor-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/tanoor-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/tanoor-192.png", sizes: "192x192", type: "image/png" }],
   },
 };
 
