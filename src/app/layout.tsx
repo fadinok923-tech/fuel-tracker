@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
@@ -31,6 +31,9 @@ export const metadata: Metadata = {
     icon: [{ url: "/icons/tanoor.svg", type: "image/svg+xml" }],
     apple: [{ url: "/icons/tanoor.svg", type: "image/svg+xml" }],
   },
+};
+
+export const viewport: Viewport = {
   themeColor: "#8f1f32",
 };
 

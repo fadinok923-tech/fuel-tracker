@@ -4,7 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
 import { api, fmtCurrency, fmtNumber, fmtDate, VEHICLE_STATUS_COLORS } from '@/lib/fleet'
+import { useAuth } from '@/lib/store'
 import { Fuel, TrendingUp, TrendingDown, Car, Route, Wrench, Wallet, Gauge, Trophy, AlertCircle, ArrowUp, ArrowDown, Calendar } from 'lucide-react'
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, LineChart, Line,
@@ -40,21 +42,63 @@ interface AnalyticsData {
 const CHART_COLORS = ['#10b981', '#0ea5e9', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16']
 
 export function DashboardView() {
+  const { user } = useAuth()
+  const canViewAnalytics = user?.role === 'ADMIN' || user?.role === 'MANAGER'
   const [data, setData] = useState<DashboardData | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    Promise.all([
-      api('/api/dashboard'),
-      api('/api/analytics?months=6'),
-    ]).then(([d, a]) => {
-      setData(d); setAnalytics(a); setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [])
+    let active = true
+    setLoading(true)
+    setError(false)
 
-  if (loading || !data || !analytics) {
+    const loadDashboard = async () => {
+      try {
+        const dashboard = await api('/api/dashboard')
+        if (!active) return
+        setData(dashboard)
+
+        if (canViewAnalytics) {
+          try {
+            const chartData = await api('/api/analytics?months=6')
+            if (active) setAnalytics(chartData)
+          } catch {
+            // Keep the dashboard KPIs available when the optional charts fail.
+            if (active) setAnalytics(null)
+          }
+        } else {
+          setAnalytics(null)
+        }
+      } catch {
+        if (active) {
+          setData(null)
+          setAnalytics(null)
+          setError(true)
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    void loadDashboard()
+    return () => { active = false }
+  }, [canViewAnalytics, reloadKey])
+
+  if (loading) {
     return <DashboardSkeleton />
+  }
+
+  if (error || !data) {
+    return (
+      <div role="alert" className="rounded-xl border border-border bg-card p-8 text-center">
+        <p className="font-semibold">Dashboard data couldn’t be loaded.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Check your connection and try again.</p>
+        <Button className="mt-4" onClick={() => setReloadKey(key => key + 1)}>Try again</Button>
+      </div>
+    )
   }
 
   const k = data.kpis
@@ -73,7 +117,8 @@ export function DashboardView() {
         <KpiCard icon={Fuel} label="Avg Fuel Cost" value={fmtCurrency(k.avgFuelCost)} subValue="Per fill-up" color="lime" />
       </div>
 
-      {/* Charts row */}
+      {/* Fleet analytics are restricted to manager roles. */}
+      {canViewAnalytics && analytics && <>
       <div className="grid lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -120,6 +165,7 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </div>
+      </>}
 
       {/* Hero stats - top/bottom performers */}
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -188,7 +234,7 @@ export function DashboardView() {
       </Card>
 
       {/* Bottom row charts */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      {canViewAnalytics && analytics && <div className="grid lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Vehicle Cost Comparison</CardTitle>
@@ -237,7 +283,7 @@ export function DashboardView() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
-      </div>
+      </div>}
     </div>
   )
 }

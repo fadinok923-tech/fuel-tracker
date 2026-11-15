@@ -1,8 +1,8 @@
-const CACHE_NAME = "tanoor-fleet-shell-v1";
-const APP_SHELL = ["/", "/manifest.webmanifest", "/icons/tanoor.svg"];
+const CACHE_NAME = "tanoor-fleet-static-v1";
+const STATIC_PATHS = ["/manifest.webmanifest", "/icons/tanoor.svg"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_PATHS)));
   self.skipWaiting();
 });
 
@@ -23,10 +23,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(async () => (await caches.match("/")) || Response.error()),
-    );
+  const isStaticAsset = STATIC_PATHS.includes(url.pathname) || url.pathname.startsWith("/_next/static/");
+  if (!isStaticAsset) {
     return;
   }
 
