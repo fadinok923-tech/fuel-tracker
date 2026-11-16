@@ -57,7 +57,7 @@ async function main() {
     { vehicleNumber: 'VAN-02', plateNumber: 'RYD-1002', vehicleName: 'Delivery Van 2', brand: 'Nissan', model: 'Urvan', year: 2021, fuelType: 'DIESEL', tankCapacity: 75, purchasePrice: 88000, purchaseDate: new Date('2021-08-20'), insuranceExpiry: new Date('2026-08-15'), registrationExpiry: new Date('2026-09-30'), currentOdometer: 65400, lastOilChangeKm: 60500, lastServiceKm: 55400, lastTyreChangeKm: 25400, lastBatteryChange: new Date('2022-04-15') },
     { vehicleNumber: 'VAN-03', plateNumber: 'RYD-1003', vehicleName: 'Delivery Van 3', brand: 'Hyundai', model: 'H1', year: 2023, fuelType: 'DIESEL', tankCapacity: 75, purchasePrice: 102000, purchaseDate: new Date('2023-03-10'), insuranceExpiry: new Date('2027-02-28'), registrationExpiry: new Date('2027-03-31'), currentOdometer: 31800, lastOilChangeKm: 27000, lastServiceKm: 22000, lastTyreChangeKm: 31800, lastBatteryChange: new Date('2023-03-10') },
     { vehicleNumber: 'VAN-04', plateNumber: 'RYD-1004', vehicleName: 'Delivery Van 4', brand: 'Mercedes', model: 'Sprinter', year: 2022, fuelType: 'DIESEL', tankCapacity: 100, purchasePrice: 165000, purchaseDate: new Date('2022-11-05'), insuranceExpiry: new Date('2026-10-10'), registrationExpiry: new Date('2026-11-15'), currentOdometer: 41700, lastOilChangeKm: 36800, lastServiceKm: 31800, lastTyreChangeKm: 11700, lastBatteryChange: new Date('2021-11-05') },
-  ]
+  ] as const
   const vehicles: any[] = []
   for (let i = 0; i < vehiclesData.length; i++) {
     const v = await db.vehicle.create({

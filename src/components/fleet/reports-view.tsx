@@ -148,7 +148,7 @@ export function ReportsView() {
             <div className="space-y-1.5"><Label className="text-xs">Customer (contains)</Label><Input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Almarai" /></div>
           )}
           <div className="flex items-end gap-2">
-            <Button onClick={runReport} disabled={loading}><FileBarChart className="size-4 mr-1" /> Generate</Button>
+            <Button onClick={() => runReport()} disabled={loading}><FileBarChart className="size-4 mr-1" /> Generate</Button>
           </div>
         </CardContent>
       </Card>

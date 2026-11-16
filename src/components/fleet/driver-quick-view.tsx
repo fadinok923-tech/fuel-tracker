@@ -139,7 +139,7 @@ export function DriverQuickView() {
         date: receipt.date || current.date,
         liters: isSar && Number.isFinite(liters) && liters > 0 ? liters.toFixed(3) : current.liters,
         pricePerLiter: pricePerLiter && pricePerLiter > 0 ? pricePerLiter.toFixed(4) : current.pricePerLiter,
-        totalCost: isSar && hasTotal ? totalPaid.toFixed(2) : isSar && liters > 0 && pricePerLiter > 0 ? (liters * pricePerLiter).toFixed(2) : current.totalCost,
+        totalCost: isSar && hasTotal ? totalPaid.toFixed(2) : isSar && liters > 0 && pricePerLiter != null && pricePerLiter > 0 ? (liters * pricePerLiter).toFixed(2) : current.totalCost,
         fuelStation: receipt.merchantName || current.fuelStation,
         invoiceNumber: receipt.invoiceNumber || current.invoiceNumber,
         paymentMethod: receipt.paymentMethod || current.paymentMethod,
