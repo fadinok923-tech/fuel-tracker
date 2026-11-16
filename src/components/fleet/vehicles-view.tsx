@@ -14,6 +14,7 @@ import { PERMISSIONS } from '@/lib/types'
 import { api, fmtCurrency, fmtNumber, fmtDate, daysUntil, VEHICLE_STATUS_COLORS, FUEL_TYPE_COLORS } from '@/lib/fleet'
 import { Car, Plus, Edit, Trash2, Search, AlertTriangle, ShieldCheck, Calendar, Gauge } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 
 const FUEL_TYPES = ['PETROL', 'DIESEL', 'HYBRID', 'ELECTRIC']
 const STATUSES = ['ACTIVE', 'IN_SERVICE', 'IDLE', 'RETIRED']
@@ -35,16 +36,20 @@ export function VehiclesView() {
   const [vehicles, setVehicles] = useState<any[]>([])
   const [drivers, setDrivers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [form, setForm] = useState<any>(empty)
 
   const load = async () => {
     setLoading(true)
-    const [v, d] = await Promise.all([api('/api/vehicles'), api('/api/drivers')])
-    setVehicles(v.vehicles)
-    setDrivers(d.drivers)
-    setLoading(false)
+    setLoadError('')
+    try {
+      const [v, d] = await Promise.all([api('/api/vehicles'), api('/api/drivers')])
+      setVehicles(v.vehicles)
+      setDrivers(d.drivers)
+    } catch (e: any) { setLoadError(e.message || 'Please check your connection.'); toast.error(`Could not load vehicles: ${e.message}`) }
+    finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
 
@@ -110,6 +115,8 @@ export function VehiclesView() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading vehicles…</div>
+          ) : loadError ? (
+            <LoadError message={loadError} onRetry={() => load()} />
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <Car className="size-12 mx-auto mb-2 opacity-30" />
@@ -186,7 +193,7 @@ export function VehiclesView() {
           <DialogHeader>
             <DialogTitle>{editing ? `Edit ${editing.vehicleNumber}` : 'Add New Vehicle'}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
             <Field label="Vehicle Number *">
               <Input value={form.vehicleNumber} onChange={e => setForm({ ...form, vehicleNumber: e.target.value })} placeholder="VAN-01" />
             </Field>
@@ -244,7 +251,7 @@ export function VehiclesView() {
             <Field label="Registration Expiry">
               <Input type="date" value={form.registrationExpiry} onChange={e => setForm({ ...form, registrationExpiry: e.target.value })} />
             </Field>
-            <div className="col-span-2 border-t pt-3 mt-1">
+            <div className="col-span-1 sm:col-span-2 border-t pt-3 mt-1">
               <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Maintenance Intervals</div>
             </div>
             <Field label="Oil Change Interval (km)">
@@ -275,7 +282,7 @@ export function VehiclesView() {
 
 function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
   return (
-    <div className={`space-y-1.5 ${full ? 'col-span-2' : ''}`}>
+    <div className={`space-y-1.5 ${full ? 'col-span-1 sm:col-span-2' : ''}`}>
       <Label className="text-xs">{label}</Label>
       {children}
     </div>

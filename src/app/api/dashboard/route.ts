@@ -30,22 +30,31 @@ export async function GET(req: NextRequest) {
   // they were previously assigned. Vehicle and maintenance summaries stay scoped
   // to their currently assigned vehicle.
   const fuelTripScope = user.role === 'DRIVER' ? { deletedAt: null, driverId: user.driverProfile!.id } : recordScope
-  const vehicles = await db.vehicle.findMany({ where: vehicleWhere, include: { assignedDriver: true } })
-  const fuelEntries = await db.fuelEntry.findMany({
-    where: { ...fuelTripScope, date: { gte: from, lte: to } },
-    include: { vehicle: true },
-  })
-  const trips = await db.trip.findMany({
-    where: { ...fuelTripScope, date: { gte: from, lte: to } },
-    include: { vehicle: true },
-  })
-  const maintenance = user.role === 'DRIVER' ? [] : await db.maintenance.findMany({
-    where: { ...recordScope, date: { gte: from, lte: to } },
-    include: { vehicle: true },
-  })
-  const todayTrips = await db.trip.findMany({
-    where: { ...fuelTripScope, date: { gte: startOfToday, lte: endOfToday } },
-  })
+  const maintenanceQuery = user.role === 'DRIVER'
+    ? Promise.resolve([] as Array<{ vehicleId: string; amount: number }>)
+    : db.maintenance.findMany({
+        where: { ...recordScope, date: { gte: from, lte: to } },
+        select: { vehicleId: true, amount: true },
+      })
+  const [vehicles, fuelEntries, trips, maintenance, todayTrips] = await Promise.all([
+    db.vehicle.findMany({
+      where: vehicleWhere,
+      select: { id: true, vehicleNumber: true, vehicleName: true, brand: true, model: true, status: true, currentOdometer: true, assignedDriver: { select: { name: true } } },
+    }),
+    db.fuelEntry.findMany({
+      where: { ...fuelTripScope, date: { gte: from, lte: to } },
+      select: { vehicleId: true, totalCost: true, liters: true, distance: true, kmPerLiter: true },
+    }),
+    db.trip.findMany({
+      where: { ...fuelTripScope, date: { gte: from, lte: to } },
+      select: { vehicleId: true, distance: true },
+    }),
+    maintenanceQuery,
+    db.trip.findMany({
+      where: { ...fuelTripScope, date: { gte: startOfToday, lte: endOfToday } },
+      select: { distance: true },
+    }),
+  ])
 
   const totalVehicles = vehicles.length
   const runningVehicles = vehicles.filter(v => v.status === 'ACTIVE').length
@@ -68,16 +77,24 @@ export async function GET(req: NextRequest) {
   const avgCostPerKm = monthlyKm > 0 ? totalFuelCost / monthlyKm : 0
 
   // Per-vehicle stats for the comparison table
-  const perVehicle = await Promise.all(vehicles.map(async (v) => {
-    const vFuel = fuelEntries.filter(f => f.vehicleId === v.id)
-    const vTrips = trips.filter(t => t.vehicleId === v.id)
-    const vMaint = maintenance.filter(m => m.vehicleId === v.id)
-    const vKm = vTrips.reduce((s, t) => s + (t.distance || 0), 0)
-    const vLiters = vFuel.reduce((s, f) => s + (f.liters || 0), 0)
-    const vFuelCost = vFuel.reduce((s, f) => s + (f.totalCost || 0), 0)
-    const vMaintCost = vMaint.reduce((s, m) => s + (m.amount || 0), 0)
-    const vAvgKmL = vFuel.filter(f => f.distance && f.distance > 0)
-    const kmL = vAvgKmL.length > 0 ? vAvgKmL.reduce((s, f) => s + (f.kmPerLiter || 0), 0) / vAvgKmL.length : 0
+  const byVehicle = new Map(vehicles.map(vehicle => [vehicle.id, { km: 0, liters: 0, fuelCost: 0, maintenanceCost: 0, kmLTotal: 0, kmLCount: 0 }]))
+  for (const fuel of fuelEntries) {
+    const stats = byVehicle.get(fuel.vehicleId)
+    if (!stats) continue
+    stats.liters += fuel.liters || 0
+    stats.fuelCost += fuel.totalCost || 0
+    if (fuel.distance && fuel.distance > 0) { stats.kmLTotal += fuel.kmPerLiter || 0; stats.kmLCount++ }
+  }
+  for (const trip of trips) { const stats = byVehicle.get(trip.vehicleId); if (stats) stats.km += trip.distance || 0 }
+  for (const item of maintenance) { const stats = byVehicle.get(item.vehicleId); if (stats) stats.maintenanceCost += item.amount || 0 }
+
+  const perVehicle = vehicles.map((v) => {
+    const stats = byVehicle.get(v.id)!
+    const vKm = stats.km
+    const vLiters = stats.liters
+    const vFuelCost = stats.fuelCost
+    const vMaintCost = stats.maintenanceCost
+    const kmL = stats.kmLCount > 0 ? stats.kmLTotal / stats.kmLCount : 0
     const costPerKm = vKm > 0 ? (vFuelCost + vMaintCost) / vKm : 0
     return {
       id: v.id,

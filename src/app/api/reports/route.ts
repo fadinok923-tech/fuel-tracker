@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
+import { forbiddenResponse, getRequestUser, unauthorizedResponse } from '@/lib/server-auth'
+import { escapeCsvCell } from '@/lib/csv'
+import { canReadFleetInsights } from '@/lib/permissions'
 
 // GET /api/reports?type=vehicle|driver|fuel|maintenance|trip&...filters
 export async function GET(req: NextRequest) {
   const user = await getRequestUser(req)
   if (!user) return unauthorizedResponse()
-  if (!isManager(user)) return forbiddenResponse()
+  if (!canReadFleetInsights(user.role)) return forbiddenResponse()
   const { searchParams } = new URL(req.url)
   const type = searchParams.get('type') || 'vehicle'
   const from = searchParams.get('from')
@@ -16,6 +18,15 @@ export async function GET(req: NextRequest) {
   const customer = searchParams.get('customer')
   const expenseType = searchParams.get('expenseType')
   const format = searchParams.get('format') || 'json' // json | csv
+  const requestedOffset = Number(searchParams.get('offset') || 0)
+  const offset = Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0)
+  const requestedLimit = Number(searchParams.get('limit') || 100)
+  const pageLimit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 100))
+  const csvLimit = 10000
+  const take = format === 'csv' ? csvLimit + 1 : pageLimit + 1
+  if (!['vehicle', 'driver', 'fuel', 'maintenance', 'trip'].includes(type)) {
+    return NextResponse.json({ error: 'Unsupported report type' }, { status: 400 })
+  }
 
   const dateFilter: any = {}
   if (from) dateFilter.gte = new Date(from)
@@ -27,23 +38,17 @@ export async function GET(req: NextRequest) {
 
   if (type === 'vehicle') {
     columns = ['Vehicle Number', 'Brand', 'Model', 'Year', 'Plate', 'Fuel Type', 'Tank (L)', 'Driver', 'Status', 'Current Odometer', 'Insurance Expiry', 'Registration Expiry', 'Purchase Price']
-    const vehicles = await db.vehicle.findMany({ where: { deletedAt: null }, include: { assignedDriver: true }, orderBy: { vehicleNumber: 'asc' } })
-    if (vehicleId) {
-      rows = vehicles.filter(v => v.id === vehicleId)
-    } else {
-      rows = vehicles
-    }
+    rows = await db.vehicle.findMany({ where: { deletedAt: null, ...(vehicleId ? { id: vehicleId } : {}) }, include: { assignedDriver: { select: { name: true } } }, orderBy: { vehicleNumber: 'asc' }, take, skip: offset })
   } else if (type === 'driver') {
     columns = ['Name', 'Mobile', 'License Number', 'License Expiry', 'Assigned Vehicle', 'Status']
-    const drivers = await db.driver.findMany({ where: { deletedAt: null }, include: { assignedVehicle: true }, orderBy: { name: 'asc' } })
-    rows = driverId ? drivers.filter(d => d.id === driverId) : drivers
+    rows = await db.driver.findMany({ where: { deletedAt: null, ...(driverId ? { id: driverId } : {}) }, include: { assignedVehicle: { select: { vehicleNumber: true } } }, orderBy: { name: 'asc' }, take, skip: offset })
   } else if (type === 'fuel') {
     columns = ['Date', 'Vehicle', 'Driver', 'Odometer', 'Previous Odometer', 'Distance', 'Liters', 'Price/Liter', 'Total Cost', 'KM/L', 'Cost/KM', 'Station', 'Invoice', 'Payment Method']
     const where: any = { deletedAt: null }
     if (vehicleId) where.vehicleId = vehicleId
     if (driverId) where.driverId = driverId
     if (hasDate) where.date = dateFilter
-    rows = await db.fuelEntry.findMany({ where, include: { vehicle: true, driver: true }, orderBy: { date: 'desc' } })
+    rows = await db.fuelEntry.findMany({ where, select: { id: true, date: true, vehicleId: true, driverId: true, odometer: true, previousOdometer: true, distance: true, liters: true, pricePerLiter: true, totalCost: true, kmPerLiter: true, costPerKm: true, fuelStation: true, invoiceNumber: true, paymentMethod: true, vehicle: { select: { vehicleNumber: true } }, driver: { select: { name: true } } }, orderBy: { date: 'desc' }, take, skip: offset })
   } else if (type === 'trip') {
     columns = ['Date', 'Vehicle', 'Driver', 'Start KM', 'End KM', 'Distance', 'Purpose', 'Customer', 'Start Location', 'End Location', 'Time Out', 'Time In']
     const where: any = { deletedAt: null }
@@ -51,23 +56,19 @@ export async function GET(req: NextRequest) {
     if (driverId) where.driverId = driverId
     if (customer) where.customer = { contains: customer }
     if (hasDate) where.date = dateFilter
-    rows = await db.trip.findMany({ where, include: { vehicle: true, driver: true }, orderBy: { date: 'desc' } })
+    rows = await db.trip.findMany({ where, select: { date: true, vehicleId: true, driverId: true, startKm: true, endKm: true, distance: true, purpose: true, customer: true, startLocation: true, endLocation: true, timeOut: true, timeIn: true, vehicle: { select: { vehicleNumber: true } }, driver: { select: { name: true } } }, orderBy: { date: 'desc' }, take, skip: offset })
   } else if (type === 'maintenance') {
     columns = ['Date', 'Vehicle', 'Expense Type', 'Amount', 'Workshop', 'Invoice', 'Notes']
     const where: any = { deletedAt: null }
     if (vehicleId) where.vehicleId = vehicleId
     if (expenseType) where.expenseType = expenseType
     if (hasDate) where.date = dateFilter
-    rows = await db.maintenance.findMany({ where, include: { vehicle: true }, orderBy: { date: 'desc' } })
+    rows = await db.maintenance.findMany({ where, select: { id: true, date: true, vehicleId: true, expenseType: true, amount: true, workshop: true, invoiceNumber: true, notes: true, vehicle: { select: { vehicleNumber: true } } }, orderBy: { date: 'desc' }, take, skip: offset })
   }
 
   if (format === 'csv') {
-    const escapeCsv = (v: any) => {
-      if (v == null) return ''
-      const s = String(v)
-      if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`
-      return s
-    }
+    const truncated = rows.length > csvLimit
+    if (truncated) rows = rows.slice(0, csvLimit)
     let csv = columns.join(',') + '\n'
     for (const row of rows) {
       let values: any[] = []
@@ -82,10 +83,12 @@ export async function GET(req: NextRequest) {
       } else if (type === 'maintenance') {
         values = [row.date.toISOString().split('T')[0], row.vehicle?.vehicleNumber, row.expenseType, row.amount, row.workshop, row.invoiceNumber, row.notes]
       }
-      csv += values.map(escapeCsv).join(',') + '\n'
+      csv += values.map(escapeCsvCell).join(',') + '\n'
     }
-    return new NextResponse(csv, { headers: { 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="${type}-report.csv"` } })
+    return new NextResponse(csv, { headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${type}-report.csv"`, 'X-Report-Truncated': String(truncated) } })
   }
 
-  return NextResponse.json({ type, columns, rows, count: rows.length })
+  const hasMore = format !== 'csv' && rows.length > pageLimit
+  if (hasMore) rows = rows.slice(0, pageLimit)
+  return NextResponse.json({ type, columns, rows, count: rows.length, hasMore, offset, limit: pageLimit })
 }

@@ -14,6 +14,7 @@ import { PERMISSIONS, ROLE_LABELS, type Role } from '@/lib/types'
 import { api, fmtDate } from '@/lib/fleet'
 import { Shield, Plus, Edit, Trash2, UserCog } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 
 const ROLES: Role[] = ['ADMIN', 'MANAGER', 'DRIVER', 'READ_ONLY']
 
@@ -30,14 +31,19 @@ export function UsersView() {
   const canManage = user ? PERMISSIONS[user.role].canManageUsers : false
   const [users, setUsers] = useState<any[]>([])
   const [unlinkedDrivers, setUnlinkedDrivers] = useState<any[]>([])
+  const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [form, setForm] = useState<any>({ name: '', username: '', email: '', password: '', role: 'MANAGER', active: true, driverProfileId: '' })
 
-  const load = () => Promise.all([api('/api/users'), api('/api/drivers')]).then(([u, d]) => {
-    setUsers(u.users)
-    setUnlinkedDrivers(d.drivers.filter((driver: any) => !driver.user?.id && driver.status === 'ACTIVE'))
-  })
+  const load = async () => {
+    setLoadError('')
+    try {
+      const [u, d] = await Promise.all([api('/api/users'), api('/api/drivers')])
+      setUsers(u.users)
+      setUnlinkedDrivers(d.drivers.filter((driver: any) => !driver.user?.id && driver.status === 'ACTIVE'))
+    } catch (e: any) { setLoadError(e.message || 'Could not load users.') }
+  }
   useEffect(() => { load() }, [])
 
   const openAdd = () => { setEditing(null); setForm({ name: '', username: '', email: '', password: '', role: 'MANAGER', active: true, driverProfileId: '' }); setModalOpen(true) }
@@ -69,6 +75,7 @@ export function UsersView() {
 
   return (
     <div className="space-y-6">
+      {loadError && <LoadError message={loadError} onRetry={load} />}
       {/* Permission matrix */}
       <Card>
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><Shield className="size-4" /> Role-Based Access Control</CardTitle>

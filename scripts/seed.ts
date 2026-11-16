@@ -1,7 +1,18 @@
 // Fleet management seed data
 import { db } from '../src/lib/db'
+import { randomBytes, scryptSync } from 'node:crypto'
+
+function hashSeedPassword(password: string) {
+  const salt = randomBytes(16).toString('hex')
+  return `scrypt$${salt}$${scryptSync(password, salt, 64).toString('hex')}`
+}
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DESTRUCTIVE_DEMO_SEED !== 'true') {
+    throw new Error('This seed deletes all fleet data. Set ALLOW_DESTRUCTIVE_DEMO_SEED=true in a disposable local database to continue.')
+  }
+  const demoPassword = process.env.DEMO_SEED_PASSWORD
+  if (!demoPassword || demoPassword.length < 12) throw new Error('Set DEMO_SEED_PASSWORD to a unique password of at least 12 characters.')
   console.log('Seeding fleet management data...')
 
   await db.auditLog.deleteMany()
@@ -15,16 +26,16 @@ async function main() {
 
   // === Users ===
   const admin = await db.user.create({
-    data: { email: 'admin@fleet.com', username: 'admin', name: 'Fleet Admin', password: 'demo-admin', role: 'ADMIN' },
+    data: { email: 'admin@fleet.com', username: 'admin', name: 'Fleet Admin', password: hashSeedPassword(demoPassword), role: 'ADMIN' },
   })
   const manager = await db.user.create({
-    data: { email: 'manager@fleet.com', username: 'manager', name: 'Operation Manager', password: 'demo-manager', role: 'MANAGER' },
+    data: { email: 'manager@fleet.com', username: 'manager', name: 'Operation Manager', password: hashSeedPassword(demoPassword), role: 'MANAGER' },
   })
   const driverUser = await db.user.create({
-    data: { email: 'driver@fleet.com', username: 'driver', name: 'Driver Portal', password: 'demo-driver', role: 'DRIVER' },
+    data: { email: 'driver@fleet.com', username: 'driver', name: 'Driver Portal', password: hashSeedPassword(demoPassword), role: 'DRIVER' },
   })
   const readOnly = await db.user.create({
-    data: { email: 'viewer@fleet.com', username: 'viewer', name: 'Accounting Viewer', password: 'demo-viewer', role: 'READ_ONLY' },
+    data: { email: 'viewer@fleet.com', username: 'viewer', name: 'Accounting Viewer', password: hashSeedPassword(demoPassword), role: 'READ_ONLY' },
   })
 
   // === Drivers ===

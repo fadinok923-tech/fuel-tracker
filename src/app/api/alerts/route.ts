@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { getRequestUser, unauthorizedResponse } from '@/lib/server-auth'
 
@@ -17,7 +18,16 @@ export async function GET(req: NextRequest) {
     daysOverdue?: number
   }> = []
 
-  const vehicles = await db.vehicle.findMany({ where: { deletedAt: null, ...(user.role === 'DRIVER' ? { id: user.driverProfile!.assignedVehicleId || '__unassigned__' } : {}) }, include: { assignedDriver: true } })
+  const vehicles = await db.vehicle.findMany({
+    where: { deletedAt: null, ...(user.role === 'DRIVER' ? { id: user.driverProfile!.assignedVehicleId || '__unassigned__' } : {}) },
+    select: {
+      id: true, vehicleNumber: true, status: true, insuranceExpiry: true,
+      registrationExpiry: true, lastOilChangeKm: true, oilChangeKmInterval: true,
+      currentOdometer: true, lastServiceKm: true, serviceKmInterval: true,
+      lastTyreChangeKm: true, tyreKmInterval: true, lastBatteryChange: true,
+      batteryIntervalDays: true,
+    },
+  })
 
   for (const v of vehicles) {
     // Insurance expiry
@@ -77,7 +87,10 @@ export async function GET(req: NextRequest) {
   }
 
   // Driver license expiry alerts
-  const drivers = await db.driver.findMany({ where: { deletedAt: null, ...(user.role === 'DRIVER' ? { id: user.driverProfile!.id } : {}) } })
+  const drivers = await db.driver.findMany({
+    where: { deletedAt: null, ...(user.role === 'DRIVER' ? { id: user.driverProfile!.id } : {}) },
+    select: { id: true, name: true, licenseExpiry: true },
+  })
   for (const d of drivers) {
     if (d.licenseExpiry) {
       const days = Math.floor((d.licenseExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
@@ -92,35 +105,67 @@ export async function GET(req: NextRequest) {
   // Vehicle not fueled for X days + abnormal fuel consumption
   const lowFuelThresholdDays = 5
   const inactiveThresholdDays = 3
+  const vehicleIds = vehicles.map(vehicle => vehicle.id)
+  const driverFilter = user.role === 'DRIVER' ? Prisma.sql`AND "driverId" = ${user.driverProfile!.id}` : Prisma.empty
+  const [latestFuelRows, latestEfficientFuelRows, fuelHistory, latestTripRows] = vehicleIds.length
+    ? await Promise.all([
+        db.$queryRaw<Array<{ vehicleId: string; date: Date }>>(Prisma.sql`
+          SELECT DISTINCT ON ("vehicleId") "vehicleId", "date"
+          FROM "FuelEntry"
+          WHERE "deletedAt" IS NULL AND "vehicleId" IN (${Prisma.join(vehicleIds)}) ${driverFilter}
+          ORDER BY "vehicleId", "date" DESC
+        `),
+        db.$queryRaw<Array<{ vehicleId: string; kmPerLiter: number | null }>>(Prisma.sql`
+          SELECT DISTINCT ON ("vehicleId") "vehicleId", "kmPerLiter"
+          FROM "FuelEntry"
+          WHERE "deletedAt" IS NULL AND "distance" > 0 AND "vehicleId" IN (${Prisma.join(vehicleIds)}) ${driverFilter}
+          ORDER BY "vehicleId", "date" DESC
+        `),
+        db.fuelEntry.groupBy({
+          by: ['vehicleId'],
+          where: { vehicleId: { in: vehicleIds }, deletedAt: null, distance: { gt: 0 }, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}) },
+          _avg: { kmPerLiter: true },
+          _count: { kmPerLiter: true, _all: true },
+        }),
+        db.$queryRaw<Array<{ vehicleId: string; date: Date }>>(Prisma.sql`
+          SELECT DISTINCT ON ("vehicleId") "vehicleId", "date"
+          FROM "Trip"
+          WHERE "deletedAt" IS NULL AND "vehicleId" IN (${Prisma.join(vehicleIds)}) ${driverFilter}
+          ORDER BY "vehicleId", "date" DESC
+        `),
+      ])
+    : [[], [], [], []]
+  const latestFuelByVehicle = new Map(latestFuelRows.map(row => [row.vehicleId, row]))
+  const latestEfficientFuelByVehicle = new Map(latestEfficientFuelRows.map(row => [row.vehicleId, row]))
+  const fuelHistoryByVehicle = new Map(fuelHistory.map(row => [row.vehicleId, row]))
+  const latestTripByVehicle = new Map(latestTripRows.map(row => [row.vehicleId, row]))
+
   for (const v of vehicles) {
     if (v.status === 'IN_SERVICE') {
       alerts.push({ severity: 'critical', type: 'IMMEDIATE_SERVICE', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} requires immediate servicing` })
     }
-    const lastFuel = await db.fuelEntry.findFirst({
-      where: { vehicleId: v.id, deletedAt: null, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}) },
-      orderBy: { date: 'desc' },
-    })
+    const lastFuel = latestFuelByVehicle.get(v.id)
     if (lastFuel) {
       const daysSinceFuel = Math.floor((now.getTime() - lastFuel.date.getTime()) / (1000 * 60 * 60 * 24))
       if (daysSinceFuel >= lowFuelThresholdDays * 2) {
         alerts.push({ severity: 'warning', type: 'NO_FUEL', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} not fueled for ${daysSinceFuel} days` })
       }
       // Abnormal fuel consumption: KM/L drops by >30% vs vehicle average
-      const allFuels = await db.fuelEntry.findMany({ where: { vehicleId: v.id, deletedAt: null, distance: { gt: 0 }, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}) }, orderBy: { date: 'desc' } })
-      if (allFuels.length >= 3) {
-        const last = allFuels[0]
-        const baseline = allFuels.slice(1).filter(f => f.kmPerLiter && f.kmPerLiter > 0)
-        const avgKmL = baseline.length ? baseline.reduce((s, f) => s + (f.kmPerLiter || 0), 0) / baseline.length : 0
-        if (last.kmPerLiter && avgKmL > 0 && last.kmPerLiter < avgKmL * 0.7) {
-          alerts.push({ severity: 'warning', type: 'ABNORMAL_FUEL', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} abnormal fuel consumption: ${last.kmPerLiter.toFixed(2)} km/L vs previous average ${avgKmL.toFixed(2)}` })
+      const recent = latestEfficientFuelByVehicle.get(v.id)
+      const history = fuelHistoryByVehicle.get(v.id)
+      if (history && history._count._all >= 3) {
+        const totalValid = history._count.kmPerLiter
+        const lastIsValid = recent?.kmPerLiter != null && recent.kmPerLiter > 0
+        const baselineCount = totalValid - (lastIsValid ? 1 : 0)
+        const validTotal = (history._avg.kmPerLiter || 0) * totalValid
+        const avgKmL = baselineCount > 0 ? (validTotal - (lastIsValid ? recent!.kmPerLiter! : 0)) / baselineCount : 0
+        if (recent?.kmPerLiter && avgKmL > 0 && recent.kmPerLiter < avgKmL * 0.7) {
+          alerts.push({ severity: 'warning', type: 'ABNORMAL_FUEL', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} abnormal fuel consumption: ${recent.kmPerLiter.toFixed(2)} km/L vs previous average ${avgKmL.toFixed(2)}` })
         }
       }
     }
     // Vehicle hasn't moved (no trips recently)
-    const lastTrip = await db.trip.findFirst({
-      where: { vehicleId: v.id, deletedAt: null, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}) },
-      orderBy: { date: 'desc' },
-    })
+    const lastTrip = latestTripByVehicle.get(v.id)
     if (!lastTrip) {
       if (v.status === 'ACTIVE') alerts.push({ severity: 'info', type: 'NO_TRIPS', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} has no recorded trips` })
     } else {

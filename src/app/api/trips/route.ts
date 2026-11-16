@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { putAudit } from '@/lib/audit'
 import { canAccessVehicle, forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
+import { validateTripReadings } from '@/lib/trip-validation'
 
 export async function GET(req: NextRequest) {
   const user = await getRequestUser(req)
@@ -12,7 +13,10 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get('from')
   const to = searchParams.get('to')
   const customer = searchParams.get('customer')
-  const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 500
+  const requestedLimit = Number(searchParams.get('limit') || 100)
+  const limit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 100))
+  const requestedOffset = Number(searchParams.get('offset') || 0)
+  const skip = Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0)
 
   const where: any = { deletedAt: null }
   if (vehicleId) where.vehicleId = vehicleId
@@ -29,11 +33,18 @@ export async function GET(req: NextRequest) {
 
   const trips = await db.trip.findMany({
     where,
-    include: { vehicle: true, driver: true },
+    select: {
+      id: true, date: true, vehicleId: true, driverId: true, startKm: true,
+      endKm: true, distance: true, purpose: true, customer: true,
+      startLocation: true, endLocation: true, timeOut: true, timeIn: true,
+      notes: true, vehicle: { select: { vehicleNumber: true } }, driver: { select: { name: true } },
+    },
     orderBy: { date: 'desc' },
-    take: limit,
+    take: limit + 1,
+    skip,
   })
-  return NextResponse.json({ trips })
+  const hasMore = trips.length > limit
+  return NextResponse.json({ trips: trips.slice(0, limit), hasMore, offset: skip, limit })
 }
 
 export async function POST(req: NextRequest) {
@@ -58,8 +69,9 @@ export async function POST(req: NextRequest) {
   }
   if (!canAccessVehicle(user, vehicleId)) return forbiddenResponse()
   const s = Number(startKm), e = Number(endKm)
-  if (e < s) return NextResponse.json({ error: 'End KM cannot be less than Start KM' }, { status: 400 })
-  const distance = e - s
+  const readingCheck = validateTripReadings(s, e)
+  if (!readingCheck.valid) return NextResponse.json({ error: readingCheck.error }, { status: 400 })
+  const distance = readingCheck.distance
 
   const trip = await db.trip.create({
     data: {

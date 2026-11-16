@@ -59,6 +59,19 @@ if (process.env.VERCEL_ENV === 'production') {
         AND table_name = '_prisma_migrations'
     `
 
+    if (Number(tableCount) > 0) {
+      const secureAdmin = await prisma.$queryRaw`
+        SELECT "id"
+        FROM public."User"
+        WHERE "role" = 'ADMIN' AND "active" = TRUE AND "deletedAt" IS NULL
+          AND "password" LIKE 'scrypt$%'
+        LIMIT 1
+      `
+      if (secureAdmin.length === 0) {
+        throw new Error('Set a strong password for at least one active administrator in the current app before deploying the credential security migration.')
+      }
+    }
+
     if (Number(tableCount) > 0 && Number(migrationTable[0].count) > 0) {
       const migrations = await prisma.$queryRaw`
         SELECT migration_name AS name
@@ -79,7 +92,7 @@ if (process.env.VERCEL_ENV === 'production') {
   }
 
   run('prisma', ['migrate', 'deploy'], migrationEnv)
-  // Keep seeding on the same Neon branch/endpoint that Prisma Migrate updated.
+  // Backfill usernames and driver-account links without creating shared demo logins.
   process.env.DATABASE_URL = migrationUrl
   await import('./seed-demo-users.mjs')
 }

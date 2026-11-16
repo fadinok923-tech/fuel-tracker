@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { createSessionToken, hashPassword, sessionCookie, verifyPassword } from '@/lib/server-auth'
+import { createSessionToken, sessionCookie, verifyPassword } from '@/lib/server-auth'
 import { putAudit } from '@/lib/audit'
 
 export async function POST(req: NextRequest) {
@@ -23,10 +23,6 @@ export async function POST(req: NextRequest) {
   if (!user || !verifyPassword(password, user.password) ||
     (user.role === 'DRIVER' && (!user.driverProfile || user.driverProfile.deletedAt || user.driverProfile.status !== 'ACTIVE'))) {
     return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 })
-  }
-
-  if (!user.password.startsWith('scrypt$')) {
-    await db.user.update({ where: { id: user.id }, data: { password: hashPassword(password) } })
   }
 
   await putAudit({ userId: user.id, action: 'LOGIN', entity: 'User', entityId: user.id, details: `Login as ${user.role}` })

@@ -3,16 +3,7 @@ import { randomBytes, scryptSync } from 'node:crypto'
 
 const prisma = new PrismaClient()
 
-const demoUsers = [
-  { id: 'seed-admin', email: 'admin@fleet.com', username: 'admin', name: 'Fleet Admin', password: 'demo-admin', role: 'ADMIN' },
-  { id: 'seed-manager', email: 'manager@fleet.com', username: 'manager', name: 'Operation Manager', password: 'demo-manager', role: 'MANAGER' },
-  { id: 'seed-driver', email: 'driver@fleet.com', username: 'driver', name: 'Driver Portal', password: 'demo-driver', role: 'DRIVER' },
-  { id: 'seed-viewer', email: 'viewer@fleet.com', username: 'viewer', name: 'Accounting Viewer', password: 'demo-viewer', role: 'READ_ONLY' },
-]
-
 try {
-  await prisma.user.createMany({ data: demoUsers, skipDuplicates: true })
-
   // Backfill username-only sign-ins for existing administrator, manager, and viewer accounts.
   const staffUsers = await prisma.user.findMany({ where: { role: { not: 'DRIVER' }, deletedAt: null, username: null } })
   for (const staffUser of staffUsers) {
@@ -21,22 +12,6 @@ try {
     const duplicate = await prisma.user.findFirst({ where: { username: { equals: username, mode: 'insensitive' }, id: { not: staffUser.id }, deletedAt: null } })
     if (duplicate) username = `${base}.${staffUser.id.toLowerCase()}`
     await prisma.user.update({ where: { id: staffUser.id }, data: { username } })
-  }
-
-  const demoDriverAccount = await prisma.user.findFirst({ where: { OR: [{ id: 'seed-driver' }, { email: 'driver@fleet.com' }] } })
-  if (demoDriverAccount && !demoDriverAccount.username) {
-    await prisma.user.update({ where: { id: demoDriverAccount.id }, data: { username: 'driver' } })
-  }
-  if (demoDriverAccount) {
-    const linked = await prisma.driver.findFirst({ where: { userId: demoDriverAccount.id } })
-    if (!linked) {
-      const matching = await prisma.driver.findFirst({ where: { name: { equals: 'Driver Portal', mode: 'insensitive' }, deletedAt: null, userId: null } })
-      if (matching) {
-        await prisma.driver.update({ where: { id: matching.id }, data: { userId: demoDriverAccount.id } })
-      } else {
-        await prisma.driver.create({ data: { id: 'seed-driver-profile', name: 'Driver Portal', mobile: '', licenseNumber: 'DEMO-DRIVER', status: 'ACTIVE', userId: demoDriverAccount.id } })
-      }
-    }
   }
 
   const driverUsers = await prisma.user.findMany({ where: { role: 'DRIVER', deletedAt: null } })

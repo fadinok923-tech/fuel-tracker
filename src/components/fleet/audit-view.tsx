@@ -5,8 +5,10 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { api, fmtDateTime } from '@/lib/fleet'
 import { ScrollText } from 'lucide-react'
+import { LoadError } from './load-error'
 
 const ACTION_COLORS: Record<string, string> = {
   CREATE: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
@@ -22,12 +24,19 @@ export function AuditView() {
   const [action, setAction] = useState('all')
   const [search, setSearch] = useState('')
   const [total, setTotal] = useState(0)
+  const [error, setError] = useState('')
+  const [hasMore, setHasMore] = useState(false)
 
-  const load = () => {
-    const params = new URLSearchParams({ limit: '500' })
+  const load = async (offset = 0) => {
+    setError('')
+    const params = new URLSearchParams({ limit: '100', offset: String(offset) })
     if (entity !== 'all') params.set('entity', entity)
     if (action !== 'all') params.set('action', action)
-    api(`/api/audit?${params}`).then(d => { setLogs(d.logs); setTotal(d.total) })
+    try {
+      const data = await api(`/api/audit?${params}`)
+      setLogs((current: any[]) => offset ? [...current, ...data.logs] : data.logs)
+      setTotal(data.total); setHasMore(data.hasMore)
+    } catch (e: any) { setError(e.message || 'Could not load the audit log.') }
   }
   useEffect(() => { load() }, [entity, action])
 
@@ -39,12 +48,13 @@ export function AuditView() {
 
   return (
     <div className="space-y-4">
+      {error && <LoadError message={error} onRetry={load} />}
       <Card>
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><ScrollText className="size-4" /> Audit Log</CardTitle>
           <CardDescription>Complete activity trail — every create, update, delete, and login is logged for compliance</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
             <div className="space-y-1.5">
               <Select value={entity} onValueChange={setEntity}>
                 <SelectTrigger><SelectValue placeholder="Entity" /></SelectTrigger>
@@ -108,6 +118,7 @@ export function AuditView() {
           <div className="text-xs text-muted-foreground mt-3">Showing {filtered.length} of {total} total log entries</div>
         </CardContent>
       </Card>
+      {hasMore && <div className="flex justify-center"><Button variant="outline" onClick={() => load(logs.length)}>Load more audit entries</Button></div>}
     </div>
   )
 }

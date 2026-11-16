@@ -13,6 +13,7 @@ import { PERMISSIONS } from '@/lib/types'
 import { api, fmtNumber, fmtDate, fmtDateTime } from '@/lib/fleet'
 import { Route, Plus, Edit, Trash2, MapPin, Clock } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 
 const today = () => new Date().toISOString().split('T')[0]
 const PURPOSES = ['Delivery', 'Pickup', 'Customer Visit', 'Maintenance Run', 'Inspection', 'Other']
@@ -26,16 +27,30 @@ export function TripsView() {
   const [vehicles, setVehicles] = useState<any[]>([])
   const [drivers, setDrivers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [form, setForm] = useState<any>({
     date: today(), vehicleId: '', driverId: '', startKm: '', endKm: '', purpose: '', customer: '', startLocation: '', endLocation: '', timeOut: '', timeIn: '', notes: '',
   })
 
-  const load = async () => {
+  const load = async (offset = 0) => {
     setLoading(true)
-    const [t, v, d] = await Promise.all([api('/api/trips?limit=500'), api('/api/vehicles'), api('/api/drivers')])
-    setTrips(t.trips); setVehicles(v.vehicles); setDrivers(d.drivers); setLoading(false)
+    setLoadError('')
+    try {
+      let t: any
+      let v: any
+      let d: any
+      if (offset === 0) [t, v, d] = await Promise.all([api('/api/trips?limit=100&offset=0'), api('/api/vehicles'), api('/api/drivers')])
+      else t = await api(`/api/trips?limit=100&offset=${offset}`)
+      setTrips(current => offset ? [...current, ...t.trips] : t.trips)
+      setHasMore(t.hasMore)
+      if (offset === 0) {
+        setVehicles(v.vehicles); setDrivers(d.drivers)
+      }
+    } catch (e: any) { setLoadError(e.message || 'Please check your connection.'); toast.error(`Could not load trips: ${e.message}`) }
+    finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
 
@@ -97,6 +112,8 @@ export function TripsView() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading trips…</div>
+          ) : loadError ? (
+            <LoadError message={loadError} onRetry={() => load()} />
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground"><Route className="size-12 mx-auto mb-2 opacity-30" /> No trips found</div>
           ) : (
@@ -161,10 +178,12 @@ export function TripsView() {
         </CardContent>
       </Card>
 
+      {hasMore && <div className="flex justify-center"><Button variant="outline" onClick={() => load(trips.length)} disabled={loading}>{loading ? 'Loading…' : 'Load more trips'}</Button></div>}
+
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? 'Edit Trip' : 'Add Trip'}</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5"><Label className="text-xs">Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Vehicle</Label>
               <Select value={form.vehicleId} onValueChange={v => {
@@ -198,7 +217,7 @@ export function TripsView() {
             <div className="space-y-1.5"><Label className="text-xs">End Location</Label><Input value={form.endLocation} onChange={e => setForm({ ...form, endLocation: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Time Out</Label><Input type="datetime-local" value={form.timeOut} onChange={e => setForm({ ...form, timeOut: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Time In</Label><Input type="datetime-local" value={form.timeIn} onChange={e => setForm({ ...form, timeIn: e.target.value })} /></div>
-            <div className="space-y-1.5 col-span-2"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+            <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>

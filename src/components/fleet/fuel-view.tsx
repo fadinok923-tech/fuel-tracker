@@ -14,6 +14,7 @@ import { PERMISSIONS } from '@/lib/types'
 import { api, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
 import { Fuel, Plus, Edit, Trash2, Gauge, TrendingUp, Receipt, ScanLine } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 
 const PAYMENT_METHODS = ['CASH', 'CARD', 'BANK_TRANSFER', 'FLEET_CARD', 'UPI', 'OTHER']
 const today = () => new Date().toISOString().split('T')[0]
@@ -28,6 +29,8 @@ export function FuelView() {
   const [vehicles, setVehicles] = useState<any[]>([])
   const [drivers, setDrivers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [form, setForm] = useState<any>({
@@ -35,10 +38,24 @@ export function FuelView() {
     fuelStation: '', invoiceNumber: '', paymentMethod: 'FLEET_CARD', notes: '', receiptImage: '',
   })
 
-  const load = async () => {
+  const load = async (offset = 0) => {
     setLoading(true)
-    const [f, v, d] = await Promise.all([api('/api/fuel?limit=500'), api('/api/vehicles'), api('/api/drivers')])
-    setEntries(f.entries); setVehicles(v.vehicles); setDrivers(d.drivers); setLoading(false)
+    setLoadError('')
+    try {
+      let f: any
+      let v: any
+      let d: any
+      if (offset === 0) [f, v, d] = await Promise.all([api('/api/fuel?limit=100&offset=0'), api('/api/vehicles'), api('/api/drivers')])
+      else f = await api(`/api/fuel?limit=100&offset=${offset}`)
+      setEntries(current => offset ? [...current, ...f.entries] : f.entries)
+      setHasMore(f.hasMore)
+      if (offset === 0) {
+        setVehicles(v.vehicles); setDrivers(d.drivers)
+      }
+    } catch (e: any) {
+      setLoadError(e.message || 'Please check your connection.')
+      toast.error(`Could not load fuel entries: ${e.message}`)
+    } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
 
@@ -59,6 +76,8 @@ export function FuelView() {
       ...e,
       date: e.date ? e.date.split('T')[0] : today(),
       driverId: e.driverId || '',
+      receiptImage: '',
+      hasReceipt: e.hasReceipt,
     })
     setModalOpen(true)
   }
@@ -82,7 +101,10 @@ export function FuelView() {
         toast.error('Please fill all required fields')
         return
       }
-      const payload = { ...form, userId: user?.id }
+      const payloadData: any = { ...form }
+      delete payloadData.hasReceipt
+      if (editing && !form.receiptImage) delete payloadData.receiptImage
+      const payload = { ...payloadData, userId: user?.id }
       if (editing) {
         await api(`/api/fuel/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) })
         toast.success('Fuel entry updated')
@@ -132,6 +154,8 @@ export function FuelView() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading fuel entries…</div>
+          ) : loadError ? (
+            <LoadError message={loadError} onRetry={() => load()} />
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <Fuel className="size-12 mx-auto mb-2 opacity-30" /> No fuel entries found
@@ -174,7 +198,7 @@ export function FuelView() {
                       <TableCell className="text-right font-mono text-xs">{e.costPerKm ? e.costPerKm.toFixed(3) : '—'}</TableCell>
                       <TableCell className="text-xs max-w-[160px] truncate" title={e.fuelStation}>{e.fuelStation || '—'}</TableCell>
                       <TableCell className="font-mono text-xs">{e.invoiceNumber || '—'}</TableCell>
-                      <TableCell className="text-xs">{e.receiptImage ? <a className="text-emerald-700 underline" href={e.receiptImage} target="_blank" rel="noreferrer">Open</a> : '—'}</TableCell>
+                      <TableCell className="text-xs">{e.hasReceipt ? <a className="text-emerald-700 underline" href={`/api/fuel/${e.id}/receipt`} target="_blank" rel="noreferrer">Open</a> : '—'}</TableCell>
                       {canEdit && (
                         <TableCell>
                           <div className="flex gap-1">
@@ -192,10 +216,12 @@ export function FuelView() {
         </CardContent>
       </Card>
 
+      {hasMore && <div className="flex justify-center"><Button variant="outline" onClick={() => load(entries.length)} disabled={loading}>{loading ? 'Loading…' : 'Load more fuel entries'}</Button></div>}
+
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? 'Edit Fuel Entry' : 'Add Fuel Entry'}</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5"><Label className="text-xs">Date *</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Vehicle *</Label>
               <Select value={form.vehicleId} onValueChange={v => {
@@ -227,7 +253,7 @@ export function FuelView() {
               <Select value={form.paymentMethod} onValueChange={v => setForm({ ...form, paymentMethod: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_METHODS.map(m => <SelectItem key={m} value={m}>{m.replace('_', ' ')}</SelectItem>)}</SelectContent></Select>
             </div>
             <div className="space-y-1.5"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
-            <div className="space-y-1.5 col-span-2"><Label className="text-xs">Fuel Receipt (image, up to 2 MB)</Label><Input type="file" accept="image/*" onChange={e => {
+            <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Fuel Receipt (image, up to 2 MB)</Label><Input type="file" accept="image/*" onChange={e => {
               const file = e.target.files?.[0]
               if (!file) return
               if (file.size > 2 * 1024 * 1024) { toast.error('Receipt image must be 2 MB or smaller'); e.currentTarget.value = ''; return }
@@ -237,7 +263,7 @@ export function FuelView() {
             }} />{form.receiptImage && <span className="text-xs text-emerald-700">Receipt attached</span>}</div>
 
             {/* Computed preview */}
-            <div className="col-span-2 grid grid-cols-4 gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900">
+            <div className="col-span-1 sm:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900">
               <Preview label="Distance" value={`${fmtNumber(computed.distance)} km`} />
               <Preview label="Total Cost" value={fmtCurrency(computed.total)} />
               <Preview label="KM/L" value={computed.kmL !== null ? fmtNumber(computed.kmL, 2) : '—'} />

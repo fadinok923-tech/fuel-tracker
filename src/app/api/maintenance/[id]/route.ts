@@ -28,7 +28,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (body.notes !== undefined) data.notes = body.notes
   if (body.invoiceImage !== undefined) data.invoiceImage = body.invoiceImage
 
-  const item = await db.maintenance.update({ where: { id }, data, include: { vehicle: true } })
+  const item = await db.maintenance.update({ where: { id }, data, select: { id: true } })
   await putAudit({ userId: actor.id, action: 'UPDATE', entity: 'Maintenance', entityId: id, details: `Updated maintenance` })
   return NextResponse.json({ item })
 }

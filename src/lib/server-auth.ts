@@ -1,24 +1,10 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
+export { hashPassword, verifyPassword } from '@/lib/password-utils'
 
 const SESSION_COOKIE = 'fleet_session'
 const SESSION_SECONDS = 60 * 60 * 24 * 7
-
-export function hashPassword(password: string) {
-  const salt = randomBytes(16).toString('hex')
-  const hash = scryptSync(password, salt, 64).toString('hex')
-  return `scrypt$${salt}$${hash}`
-}
-
-export function verifyPassword(password: string, stored: string) {
-  if (!stored.startsWith('scrypt$')) return stored === password // Legacy demo accounts are upgraded on successful login.
-  const [, salt, hash] = stored.split('$')
-  if (!salt || !hash) return false
-  const expected = Buffer.from(hash, 'hex')
-  const actual = scryptSync(password, salt, expected.length)
-  return expected.length === actual.length && timingSafeEqual(expected, actual)
-}
 
 export type RequestUser = {
   id: string

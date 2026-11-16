@@ -6,12 +6,16 @@ import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } fr
 export async function GET(req: NextRequest) {
   const user = await getRequestUser(req)
   if (!user) return unauthorizedResponse()
-  if (!isManager(user) && user.role !== 'DRIVER') return forbiddenResponse()
+  if (!isManager(user) && user.role !== 'DRIVER' && user.role !== 'READ_ONLY') return forbiddenResponse()
   const { searchParams } = new URL(req.url)
   const vehicleId = searchParams.get('vehicleId')
   const expenseType = searchParams.get('expenseType')
   const from = searchParams.get('from')
   const to = searchParams.get('to')
+  const requestedLimit = Number(searchParams.get('limit') || 100)
+  const limit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 100))
+  const requestedOffset = Number(searchParams.get('offset') || 0)
+  const skip = Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0)
 
   const where: any = user.role === 'DRIVER'
     ? { deletedAt: null, userId: user.id, vehicleId: user.driverProfile!.assignedVehicleId || '__unassigned__' }
@@ -26,10 +30,17 @@ export async function GET(req: NextRequest) {
 
   const items = await db.maintenance.findMany({
     where,
-    include: { vehicle: true },
+    select: {
+      id: true, date: true, vehicleId: true, expenseType: true, amount: true,
+      workshop: true, invoiceNumber: true, notes: true, createdAt: true,
+      vehicle: { select: { vehicleNumber: true } },
+    },
     orderBy: { date: 'desc' },
+    take: limit + 1,
+    skip,
   })
-  return NextResponse.json({ items })
+  const hasMore = items.length > limit
+  return NextResponse.json({ items: items.slice(0, limit), hasMore, offset: skip, limit })
 }
 
 export async function POST(req: NextRequest) {
@@ -68,7 +79,7 @@ export async function POST(req: NextRequest) {
       vehicleId, expenseType, amount: amountValue,
       workshop, invoiceNumber: invoice || null, notes, invoiceImage, userId: user.id,
     },
-    include: { vehicle: true },
+    select: { id: true, vehicle: { select: { vehicleNumber: true } } },
   })
 
   // When maintenance type is OIL_CHANGE / TYRES / BATTERY / BRAKE_SERVICE, update the vehicle's last service tracking fields

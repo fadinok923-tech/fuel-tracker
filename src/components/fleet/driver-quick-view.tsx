@@ -9,6 +9,7 @@ import { api, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
 import { useAuth } from '@/lib/store'
 import { Zap, Fuel, Route, Gauge, CheckCircle2, TrendingUp, History, ScanLine, Upload, Sparkles, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 
 const today = () => new Date().toISOString().split('T')[0]
 
@@ -44,6 +45,7 @@ export function DriverQuickView() {
   const [vehicles, setVehicles] = useState<any[]>([])
   const [drivers, setDrivers] = useState<any[]>([])
   const [recent, setRecent] = useState<any[]>([])
+  const [loadError, setLoadError] = useState('')
   const [tab, setTab] = useState<'fuel' | 'trip'>('fuel')
   const [scanning, setScanning] = useState(false)
   const [receiptName, setReceiptName] = useState('')
@@ -61,19 +63,21 @@ export function DriverQuickView() {
   })
 
   const load = async () => {
-    const [v, d, f] = await Promise.all([
-      api('/api/vehicles'),
-      api('/api/drivers'),
-      api('/api/fuel?limit=5'),
-    ])
-    setVehicles(v.vehicles)
-    setDrivers(d.drivers)
-    setRecent(f.entries)
-    // default selection
-    if (v.vehicles[0] && !fuelForm.vehicleId) {
-      setFuelForm((prev: any) => ({ ...prev, vehicleId: v.vehicles[0].id, driverId: v.vehicles[0].assignedDriverId || '' }))
-      setTripForm((prev: any) => ({ ...prev, vehicleId: v.vehicles[0].id, driverId: v.vehicles[0].assignedDriverId || '', startKm: String(v.vehicles[0].currentOdometer) }))
-    }
+    setLoadError('')
+    try {
+      const [v, d, f] = await Promise.all([
+        api('/api/vehicles'),
+        api('/api/drivers'),
+        api('/api/fuel?limit=5'),
+      ])
+      setVehicles(v.vehicles)
+      setDrivers(d.drivers)
+      setRecent(f.entries)
+      if (v.vehicles[0] && !fuelForm.vehicleId) {
+        setFuelForm((prev: any) => ({ ...prev, vehicleId: v.vehicles[0].id, driverId: v.vehicles[0].assignedDriverId || '' }))
+        setTripForm((prev: any) => ({ ...prev, vehicleId: v.vehicles[0].id, driverId: v.vehicles[0].assignedDriverId || '', startKm: String(v.vehicles[0].currentOdometer) }))
+      }
+    } catch (e: any) { setLoadError(e.message || 'Please check your connection.') }
   }
   useEffect(() => { load() }, [])
 
@@ -182,6 +186,7 @@ export function DriverQuickView() {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      {loadError && <LoadError message={loadError} onRetry={load} />}
       <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-emerald-900/20 border-emerald-200 dark:border-emerald-900">
         <CardContent className="p-5 flex items-center gap-4">
           <div className="size-12 rounded-xl bg-emerald-600 text-white grid place-items-center">
@@ -262,7 +267,7 @@ export function DriverQuickView() {
                 {scanNotes.map((note, index) => <div key={index} className="mt-1">• {note}</div>)}
               </div>}
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5"><Label className="text-xs">Date</Label><Input type="date" value={fuelForm.date} onChange={e => setFuelForm({ ...fuelForm, date: e.target.value })} /></div>
               <div className="space-y-1.5"><Label className="text-xs">Vehicle</Label>
                 <Select value={fuelForm.vehicleId} onValueChange={v => {
@@ -273,12 +278,12 @@ export function DriverQuickView() {
                   <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.vehicleNumber}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5 col-span-2"><Label className="text-xs">Odometer Reading (km)</Label>
+              <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Odometer Reading (km)</Label>
                 <Input type="number" value={fuelForm.odometer} onChange={e => setFuelForm({ ...fuelForm, odometer: e.target.value })} placeholder={`Previous: ${fuelCalc.prev}`} />
               </div>
               <div className="space-y-1.5"><Label className="text-xs">Total Cost (SAR) *</Label><Input type="number" min="0" step="0.01" value={fuelForm.totalCost} onChange={e => setFuelForm({ ...fuelForm, totalCost: e.target.value })} placeholder="100.00" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Price / Liter (SAR) *</Label><Input type="number" min="0" step="0.0001" value={fuelForm.pricePerLiter} onChange={e => setFuelForm({ ...fuelForm, pricePerLiter: e.target.value })} placeholder="2.33" /></div>
-              <div className="col-span-2 -mt-2 text-xs text-muted-foreground">Liters are calculated automatically from total cost ÷ price per liter.</div>
+              <div className="col-span-1 sm:col-span-2 -mt-2 text-xs text-muted-foreground">Liters are calculated automatically from total cost ÷ price per liter.</div>
               <div className="space-y-1.5 col-span-2"><Label className="text-xs">Fuel Station (optional)</Label><Input value={fuelForm.fuelStation} onChange={e => setFuelForm({ ...fuelForm, fuelStation: e.target.value })} placeholder="Aramco - Olaya" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Invoice Number</Label><Input value={fuelForm.invoiceNumber} onChange={e => setFuelForm({ ...fuelForm, invoiceNumber: e.target.value })} placeholder="From receipt" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Payment Method</Label>

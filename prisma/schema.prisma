@@ -164,6 +164,7 @@ model FuelEntry {
   @@index([vehicleId, date])
   @@index([driverId])
   @@index([date])
+  @@index([deletedAt, date])
   @@index([invoiceNumber])
   @@index([fuelStation])
 }
@@ -206,6 +207,7 @@ model Trip {
   @@index([vehicleId, date])
   @@index([driverId])
   @@index([date])
+  @@index([deletedAt, date])
   @@index([customer])
 }
 
@@ -232,6 +234,7 @@ model Maintenance {
   @@index([vehicleId, date])
   @@index([expenseType])
   @@index([date])
+  @@index([deletedAt, date])
 }
 
 enum MaintenanceType {
