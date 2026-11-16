@@ -1,0 +1,1 @@
+ALTER TYPE "MaintenanceType" ADD VALUE 'WASHING';

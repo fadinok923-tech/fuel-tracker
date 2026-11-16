@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   let { date, vehicleId, expenseType, amount, workshop, invoiceNumber, notes, invoiceImage } = body
 
   if (user.role === 'DRIVER') {
-    const allowedDriverTypes = ['OIL_CHANGE', 'TYRES', 'BATTERY', 'BRAKE_SERVICE', 'REPAIRS', 'UNEXPECTED', 'OTHER']
+    const allowedDriverTypes = ['OIL_CHANGE', 'TYRES', 'BATTERY', 'BRAKE_SERVICE', 'WASHING', 'REPAIRS', 'UNEXPECTED', 'OTHER']
     if (!user.driverProfile?.assignedVehicleId) return forbiddenResponse()
     vehicleId = user.driverProfile.assignedVehicleId
     if (!allowedDriverTypes.includes(expenseType)) {
