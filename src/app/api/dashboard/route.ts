@@ -113,7 +113,7 @@ export async function GET(req: NextRequest) {
       currentOdometer: v.currentOdometer,
       status: v.status,
     }
-  }))
+  })
 
   // Top fuel consuming, most/least efficient, highest/lowest running
   const valid = perVehicle.filter(v => v.fuelLiters > 0)
