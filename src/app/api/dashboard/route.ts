@@ -77,13 +77,16 @@ export async function GET(req: NextRequest) {
   const avgCostPerKm = monthlyKm > 0 ? totalFuelCost / monthlyKm : 0
 
   // Per-vehicle stats for the comparison table
-  const byVehicle = new Map(vehicles.map(vehicle => [vehicle.id, { km: 0, liters: 0, fuelCost: 0, maintenanceCost: 0, kmLTotal: 0, kmLCount: 0 }]))
+  const byVehicle = new Map(vehicles.map(vehicle => [vehicle.id, { km: 0, liters: 0, fuelCost: 0, maintenanceCost: 0, fuelDistance: 0, measuredLiters: 0 }]))
   for (const fuel of fuelEntries) {
     const stats = byVehicle.get(fuel.vehicleId)
     if (!stats) continue
     stats.liters += fuel.liters || 0
     stats.fuelCost += fuel.totalCost || 0
-    if (fuel.distance && fuel.distance > 0) { stats.kmLTotal += fuel.kmPerLiter || 0; stats.kmLCount++ }
+    if (fuel.distance && fuel.distance > 0 && fuel.liters > 0) {
+      stats.fuelDistance += fuel.distance
+      stats.measuredLiters += fuel.liters
+    }
   }
   for (const trip of trips) { const stats = byVehicle.get(trip.vehicleId); if (stats) stats.km += trip.distance || 0 }
   for (const item of maintenance) { const stats = byVehicle.get(item.vehicleId); if (stats) stats.maintenanceCost += item.amount || 0 }
@@ -94,7 +97,7 @@ export async function GET(req: NextRequest) {
     const vLiters = stats.liters
     const vFuelCost = stats.fuelCost
     const vMaintCost = stats.maintenanceCost
-    const kmL = stats.kmLCount > 0 ? stats.kmLTotal / stats.kmLCount : 0
+    const kmL = stats.measuredLiters > 0 ? stats.fuelDistance / stats.measuredLiters : 0
     const costPerKm = vKm > 0 ? (vFuelCost + vMaintCost) / vKm : 0
     return {
       id: v.id,
