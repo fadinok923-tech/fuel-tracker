@@ -138,6 +138,7 @@ export function ReportsView() {
                   <SelectItem value="BRAKE_SERVICE">Brake Service</SelectItem>
                   <SelectItem value="INSURANCE">Insurance</SelectItem>
                   <SelectItem value="REGISTRATION">Registration</SelectItem>
+                  <SelectItem value="WASHING">Washing</SelectItem>
                   <SelectItem value="REPAIRS">Repairs</SelectItem>
                   <SelectItem value="UNEXPECTED">Unexpected</SelectItem>
                 </SelectContent>

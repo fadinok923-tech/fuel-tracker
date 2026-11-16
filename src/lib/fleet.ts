@@ -79,6 +79,7 @@ export const MAINT_TYPE_LABELS: Record<string, string> = {
   BRAKE_SERVICE: 'Brake Service',
   INSURANCE: 'Insurance',
   REGISTRATION: 'Registration',
+  WASHING: 'Washing',
   REPAIRS: 'Repairs',
   UNEXPECTED: 'Unexpected',
   OTHER: 'Other',

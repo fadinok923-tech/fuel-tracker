@@ -24,6 +24,7 @@ const TYPE_COLORS: Record<string, string> = {
   BRAKE_SERVICE: 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400',
   INSURANCE: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400',
   REGISTRATION: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-400',
+  WASHING: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400',
   REPAIRS: 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-400',
   UNEXPECTED: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400',
   OTHER: 'bg-muted text-muted-foreground',
