@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -33,10 +34,20 @@ export function AnalyticsView() {
   const [months, setMonths] = useState('6')
   const [budget, setBudget] = useState('')
   const [savingBudget, setSavingBudget] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
-    api(`/api/analytics?months=${months}`).then((next: Analytics) => { setData(next); setBudget(String(next.fuelBudget.amount || '')) })
-  }, [months])
+    let active = true
+    setLoading(true)
+    setError('')
+    api(`/api/analytics?months=${months}`)
+      .then((next: Analytics) => { if (active) { setData(next); setBudget(String(next.fuelBudget.amount || '')) } })
+      .catch((e: any) => { if (active) setError(e.message || 'Could not load analytics.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [months, reloadKey])
 
   const saveBudget = async () => {
     setSavingBudget(true)
@@ -52,12 +63,15 @@ export function AnalyticsView() {
     }
   }
 
-  if (!data) return <div className="space-y-4"><Skeleton className="h-80" /><Skeleton className="h-80" /></div>
+  if (!data && loading) return <div className="space-y-4"><Skeleton className="h-80" /><Skeleton className="h-80" /></div>
+  if (!data && error) return <LoadError message={error} onRetry={() => setReloadKey(key => key + 1)} />
+  if (!data) return null
 
   const radarData = data.vehicleComparison.map(v => ({ vehicle: v.vehicleNumber, km: v.km, kmL: v.kmL, cost: v.totalCost / 100 }))
 
   return (
     <div className="space-y-6">
+      {error && <LoadError message={error} onRetry={() => setReloadKey(key => key + 1)} />}
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted-foreground">Time range</div>
         <Select value={months} onValueChange={setMonths}>

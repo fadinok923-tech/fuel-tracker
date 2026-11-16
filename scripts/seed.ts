@@ -1,7 +1,18 @@
 // Fleet management seed data
 import { db } from '../src/lib/db'
+import { randomBytes, scryptSync } from 'node:crypto'
+
+function hashSeedPassword(password: string) {
+  const salt = randomBytes(16).toString('hex')
+  return `scrypt$${salt}$${scryptSync(password, salt, 64).toString('hex')}`
+}
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DESTRUCTIVE_DEMO_SEED !== 'true') {
+    throw new Error('This seed deletes all fleet data. Set ALLOW_DESTRUCTIVE_DEMO_SEED=true in a disposable local database to continue.')
+  }
+  const demoPassword = process.env.DEMO_SEED_PASSWORD
+  if (!demoPassword || demoPassword.length < 12) throw new Error('Set DEMO_SEED_PASSWORD to a unique password of at least 12 characters.')
   console.log('Seeding fleet management data...')
 
   await db.auditLog.deleteMany()
@@ -15,16 +26,16 @@ async function main() {
 
   // === Users ===
   const admin = await db.user.create({
-    data: { email: 'admin@fleet.com', username: 'admin', name: 'Fleet Admin', password: 'demo-admin', role: 'ADMIN' },
+    data: { email: 'admin@fleet.com', username: 'admin', name: 'Fleet Admin', password: hashSeedPassword(demoPassword), role: 'ADMIN' },
   })
   const manager = await db.user.create({
-    data: { email: 'manager@fleet.com', username: 'manager', name: 'Operation Manager', password: 'demo-manager', role: 'MANAGER' },
+    data: { email: 'manager@fleet.com', username: 'manager', name: 'Operation Manager', password: hashSeedPassword(demoPassword), role: 'MANAGER' },
   })
   const driverUser = await db.user.create({
-    data: { email: 'driver@fleet.com', username: 'driver', name: 'Driver Portal', password: 'demo-driver', role: 'DRIVER' },
+    data: { email: 'driver@fleet.com', username: 'driver', name: 'Driver Portal', password: hashSeedPassword(demoPassword), role: 'DRIVER' },
   })
   const readOnly = await db.user.create({
-    data: { email: 'viewer@fleet.com', username: 'viewer', name: 'Accounting Viewer', password: 'demo-viewer', role: 'READ_ONLY' },
+    data: { email: 'viewer@fleet.com', username: 'viewer', name: 'Accounting Viewer', password: hashSeedPassword(demoPassword), role: 'READ_ONLY' },
   })
 
   // === Drivers ===
@@ -46,7 +57,7 @@ async function main() {
     { vehicleNumber: 'VAN-02', plateNumber: 'RYD-1002', vehicleName: 'Delivery Van 2', brand: 'Nissan', model: 'Urvan', year: 2021, fuelType: 'DIESEL', tankCapacity: 75, purchasePrice: 88000, purchaseDate: new Date('2021-08-20'), insuranceExpiry: new Date('2026-08-15'), registrationExpiry: new Date('2026-09-30'), currentOdometer: 65400, lastOilChangeKm: 60500, lastServiceKm: 55400, lastTyreChangeKm: 25400, lastBatteryChange: new Date('2022-04-15') },
     { vehicleNumber: 'VAN-03', plateNumber: 'RYD-1003', vehicleName: 'Delivery Van 3', brand: 'Hyundai', model: 'H1', year: 2023, fuelType: 'DIESEL', tankCapacity: 75, purchasePrice: 102000, purchaseDate: new Date('2023-03-10'), insuranceExpiry: new Date('2027-02-28'), registrationExpiry: new Date('2027-03-31'), currentOdometer: 31800, lastOilChangeKm: 27000, lastServiceKm: 22000, lastTyreChangeKm: 31800, lastBatteryChange: new Date('2023-03-10') },
     { vehicleNumber: 'VAN-04', plateNumber: 'RYD-1004', vehicleName: 'Delivery Van 4', brand: 'Mercedes', model: 'Sprinter', year: 2022, fuelType: 'DIESEL', tankCapacity: 100, purchasePrice: 165000, purchaseDate: new Date('2022-11-05'), insuranceExpiry: new Date('2026-10-10'), registrationExpiry: new Date('2026-11-15'), currentOdometer: 41700, lastOilChangeKm: 36800, lastServiceKm: 31800, lastTyreChangeKm: 11700, lastBatteryChange: new Date('2021-11-05') },
-  ]
+  ] as const
   const vehicles: any[] = []
   for (let i = 0; i < vehiclesData.length; i++) {
     const v = await db.vehicle.create({

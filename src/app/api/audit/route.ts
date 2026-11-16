@@ -8,8 +8,10 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorizedResponse()
   if (!isManager(user)) return forbiddenResponse()
   const { searchParams } = new URL(req.url)
-  const limit = Number(searchParams.get('limit') || 200)
-  const offset = Number(searchParams.get('offset') || 0)
+  const requestedLimit = Number(searchParams.get('limit') || 100)
+  const limit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 100))
+  const requestedOffset = Number(searchParams.get('offset') || 0)
+  const offset = Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0)
   const entity = searchParams.get('entity')
   const action = searchParams.get('action')
 
@@ -22,11 +24,12 @@ export async function GET(req: NextRequest) {
       where,
       include: { user: { select: { name: true, email: true, role: true } } },
       orderBy: { timestamp: 'desc' },
-      take: limit,
+      take: limit + 1,
       skip: offset,
     }),
     db.auditLog.count({ where }),
   ])
 
-  return NextResponse.json({ logs, total, limit, offset })
+  const hasMore = logs.length > limit
+  return NextResponse.json({ logs: logs.slice(0, limit), total, limit, offset, hasMore })
 }

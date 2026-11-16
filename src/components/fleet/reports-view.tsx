@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { api, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
 import { FileBarChart, Download, FileText, FileSpreadsheet, Filter } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 
 const REPORT_TYPES = [
   { value: 'vehicle', label: 'Vehicles' },
@@ -31,14 +32,23 @@ export function ReportsView() {
   const [drivers, setDrivers] = useState<any[]>([])
   const [result, setResult] = useState<{ columns: string[]; rows: any[]; count: number } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [error, setError] = useState('')
+  const [filterError, setFilterError] = useState('')
 
-  useEffect(() => {
-    Promise.all([api('/api/vehicles'), api('/api/drivers')]).then(([v, d]) => { setVehicles(v.vehicles); setDrivers(d.drivers) })
-  }, [])
+  const loadFilters = async () => {
+    setFilterError('')
+    try {
+      const [v, d] = await Promise.all([api('/api/vehicles'), api('/api/drivers')])
+      setVehicles(v.vehicles); setDrivers(d.drivers)
+    } catch (e: any) { setFilterError(e.message || 'Could not load report filters.') }
+  }
+  useEffect(() => { loadFilters() }, [])
 
-  const runReport = async () => {
+  const runReport = async (offset = 0) => {
     setLoading(true)
-    const params = new URLSearchParams({ type, format: 'json' })
+    setError('')
+    const params = new URLSearchParams({ type, format: 'json', limit: '100', offset: String(offset) })
     if (from) params.set('from', from)
     if (to) params.set('to', to)
     if (vehicleId !== 'all') params.set('vehicleId', vehicleId)
@@ -47,19 +57,30 @@ export function ReportsView() {
     if (expenseType !== 'all') params.set('expenseType', expenseType)
     try {
       const data = await api(`/api/reports?${params}`)
-      setResult(data)
-    } catch (e: any) { toast.error(e.message) } finally { setLoading(false) }
+      setResult((current) => offset && current ? { ...data, rows: [...current.rows, ...data.rows], count: current.count + data.rows.length } : data)
+      setHasMore(data.hasMore)
+    } catch (e: any) { setError(e.message || 'Could not load the report.'); toast.error(e.message) } finally { setLoading(false) }
   }
 
-  const exportCsv = () => {
-    const params = new URLSearchParams({ type, format: 'csv' })
+  const exportCsv = async () => {
+    const params = new URLSearchParams({ type, format: 'csv', limit: '10000' })
     if (from) params.set('from', from)
     if (to) params.set('to', to)
     if (vehicleId !== 'all') params.set('vehicleId', vehicleId)
     if (driverId !== 'all') params.set('driverId', driverId)
     if (customer) params.set('customer', customer)
     if (expenseType !== 'all') params.set('expenseType', expenseType)
-    window.open(`/api/reports?${params}`, '_blank')
+    try {
+      const response = await fetch(`/api/reports?${params}`)
+      if (!response.ok) throw new Error('Could not export the report.')
+      const objectUrl = URL.createObjectURL(await response.blob())
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = `${type}-report.csv`
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+      if (response.headers.get('X-Report-Truncated') === 'true') toast.warning('Export reached the 10,000 row limit. Add filters to include the remaining records.')
+    } catch (e: any) { toast.error(e.message || 'Could not export the report.') }
   }
 
   const print = () => window.print()
@@ -68,11 +89,13 @@ export function ReportsView() {
 
   return (
     <div className="space-y-4">
+      {filterError && <LoadError message={filterError} onRetry={loadFilters} />}
+      {error && <LoadError message={error} onRetry={() => runReport()} />}
       <Card>
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><Filter className="size-4" /> Report Filters</CardTitle>
           <CardDescription>Choose report type and filter criteria, then export to Excel/CSV/PDF</CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           <div className="space-y-1.5"><Label className="text-xs">Report Type</Label>
             <Select value={type} onValueChange={setType}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -125,7 +148,7 @@ export function ReportsView() {
             <div className="space-y-1.5"><Label className="text-xs">Customer (contains)</Label><Input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Almarai" /></div>
           )}
           <div className="flex items-end gap-2">
-            <Button onClick={runReport} disabled={loading}><FileBarChart className="size-4 mr-1" /> Generate</Button>
+            <Button onClick={() => runReport()} disabled={loading}><FileBarChart className="size-4 mr-1" /> Generate</Button>
           </div>
         </CardContent>
       </Card>
@@ -163,6 +186,7 @@ export function ReportsView() {
           </CardContent>
         </Card>
       )}
+      {result && hasMore && <div className="flex justify-center"><Button variant="outline" onClick={() => runReport(result.rows.length)} disabled={loading}>{loading ? 'Loading…' : 'Load more report rows'}</Button></div>}
     </div>
   )
 }

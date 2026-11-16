@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
 import { useAuth, useUI } from '@/lib/store'
 import { PERMISSIONS, type ViewKey } from '@/lib/types'
 import { api } from '@/lib/fleet'
@@ -21,7 +21,7 @@ import { AuditView } from './audit-view'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { ShieldAlert } from 'lucide-react'
 
-const VIEWS: Record<ViewKey, () => JSX.Element> = {
+const VIEWS: Record<ViewKey, ComponentType> = {
   dashboard: DashboardView,
   vehicles: VehiclesView,
   drivers: DriversView,

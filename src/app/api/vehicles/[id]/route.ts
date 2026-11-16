@@ -21,7 +21,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (!isManager(user)) return forbiddenResponse()
   const { id } = await ctx.params
   const body = await req.json()
-  const existing = await db.vehicle.findUnique({ where: { id } })
+  const existing = await db.vehicle.findUnique({ where: { id }, include: { assignedDriver: { select: { id: true } } } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   if (body.vehicleNumber || body.plateNumber) {
@@ -57,8 +57,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (body.lastBatteryChange !== undefined) data.lastBatteryChange = body.lastBatteryChange ? new Date(body.lastBatteryChange) : null
 
   if (body.assignedDriverId !== undefined) {
-    if (existing.assignedDriverId) {
-      await db.driver.update({ where: { id: existing.assignedDriverId }, data: { assignedVehicleId: null } }).catch(()=>{})
+    if (existing.assignedDriver?.id) {
+      await db.driver.update({ where: { id: existing.assignedDriver.id }, data: { assignedVehicleId: null } }).catch(()=>{})
     }
     if (body.assignedDriverId) {
       await db.driver.updateMany({ where: { assignedVehicleId: id }, data: { assignedVehicleId: null } })

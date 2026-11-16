@@ -9,7 +9,10 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
   const body = await req.json()
-  const existing = await db.fuelEntry.findUnique({ where: { id } })
+  const existing = await db.fuelEntry.findUnique({
+    where: { id },
+    select: { id: true, vehicleId: true, odometer: true, liters: true, pricePerLiter: true, distance: true },
+  })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   if (body.invoiceNumber !== undefined && String(body.invoiceNumber || '').trim()) {
@@ -53,7 +56,17 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   data.kmPerLiter = distance > 0 ? +(distance / newLiters).toFixed(2) : null
   data.costPerKm = distance > 0 ? +(totalCost / distance).toFixed(3) : null
 
-  const entry = await db.fuelEntry.update({ where: { id }, data, include: { vehicle: true, driver: true } })
+  const entry = await db.fuelEntry.update({
+    where: { id },
+    data,
+    select: {
+      id: true, date: true, vehicleId: true, driverId: true, odometer: true,
+      previousOdometer: true, distance: true, liters: true, pricePerLiter: true,
+      totalCost: true, fuelStation: true, invoiceNumber: true, paymentMethod: true,
+      notes: true, kmPerLiter: true, costPerKm: true,
+      vehicle: { select: { vehicleNumber: true } }, driver: { select: { name: true } },
+    },
+  })
 
   // Update vehicle odometer if needed
   if (body.odometer !== undefined) {

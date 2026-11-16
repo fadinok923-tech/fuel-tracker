@@ -12,6 +12,7 @@ import { useAuth, useUI } from '@/lib/store'
 import { api, fmtDate, daysUntil, DRIVER_STATUS_COLORS } from '@/lib/fleet'
 import { Users, Plus, Edit, Trash2, Phone, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 
 const STATUSES = ['ACTIVE', 'ON_LEAVE', 'INACTIVE']
 const empty = { name: '', mobile: '', licenseNumber: '', licenseExpiry: '', status: 'ACTIVE', notes: '', assignedVehicleId: '', username: '', password: '' }
@@ -24,14 +25,19 @@ export function DriversView() {
   const [drivers, setDrivers] = useState<any[]>([])
   const [vehicles, setVehicles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [form, setForm] = useState<any>(empty)
 
   const load = async () => {
     setLoading(true)
-    const [d, v] = await Promise.all([api('/api/drivers'), api('/api/vehicles')])
-    setDrivers(d.drivers); setVehicles(v.vehicles); setLoading(false)
+    setLoadError('')
+    try {
+      const [d, v] = await Promise.all([api('/api/drivers'), api('/api/vehicles')])
+      setDrivers(d.drivers); setVehicles(v.vehicles)
+    } catch (e: any) { setLoadError(e.message || 'Please check your connection.'); toast.error(`Could not load drivers: ${e.message}`) }
+    finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
 
@@ -90,6 +96,8 @@ export function DriversView() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading drivers…</div>
+          ) : loadError ? (
+            <LoadError message={loadError} onRetry={() => load()} />
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <Users className="size-12 mx-auto mb-2 opacity-30" /> No drivers found
@@ -157,15 +165,15 @@ export function DriversView() {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader><DialogTitle>{editing ? `Edit ${editing.name}` : 'Add New Driver'}</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-2">
-            <div className="space-y-1.5 col-span-2"><Label className="text-xs">Full Name *</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
+            <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Full Name *</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Mobile</Label><Input value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} placeholder="+966…" /></div>
             <div className="space-y-1.5"><Label className="text-xs">License Number *</Label><Input value={form.licenseNumber} onChange={e => setForm({ ...form, licenseNumber: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">License Expiry</Label><Input type="date" value={form.licenseExpiry} onChange={e => setForm({ ...form, licenseExpiry: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Status</Label>
               <Select value={form.status} onValueChange={v => setForm({ ...form, status: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(s => <SelectItem key={s} value={s}>{s.replace('_', ' ')}</SelectItem>)}</SelectContent></Select>
             </div>
-            <div className="space-y-1.5 col-span-2"><Label className="text-xs">Assigned Vehicle</Label>
+            <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Assigned Vehicle</Label>
               <Select value={form.assignedVehicleId || 'none'} onValueChange={v => setForm({ ...form, assignedVehicleId: v === 'none' ? '' : v })}>
                 <SelectTrigger><SelectValue placeholder="Select vehicle" /></SelectTrigger>
                 <SelectContent>
@@ -174,11 +182,11 @@ export function DriversView() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 col-span-2"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+            <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
             {canEdit && <>
               <div className="space-y-1.5"><Label className="text-xs">Driver Username *</Label><Input value={form.username || ''} onChange={e => setForm({ ...form, username: e.target.value })} autoComplete="off" /></div>
               <div className="space-y-1.5"><Label className="text-xs">{editing ? 'Set new password (leave blank to keep)' : 'Password *'}</Label><Input type="password" value={form.password || ''} onChange={e => setForm({ ...form, password: e.target.value })} autoComplete="new-password" /></div>
-              <p className="col-span-2 text-xs text-muted-foreground">Each driver receives a unique username and password. Setting status to Inactive disables this login.</p>
+              <p className="col-span-1 sm:col-span-2 text-xs text-muted-foreground">Each driver receives a unique username and password. Setting status to Inactive disables this login.</p>
             </>}
           </div>
           <DialogFooter>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { putAudit } from '@/lib/audit'
 import { canAccessVehicle, forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
@@ -11,7 +12,10 @@ export async function GET(req: NextRequest) {
   const driverId = searchParams.get('driverId')
   const from = searchParams.get('from')
   const to = searchParams.get('to')
-  const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 500
+  const requestedLimit = Number(searchParams.get('limit') || 100)
+  const limit = Math.min(500, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 100))
+  const requestedOffset = Number(searchParams.get('offset') || 0)
+  const skip = Math.max(0, Number.isFinite(requestedOffset) ? Math.floor(requestedOffset) : 0)
 
   const where: any = { deletedAt: null }
   if (vehicleId) where.vehicleId = vehicleId
@@ -27,11 +31,27 @@ export async function GET(req: NextRequest) {
 
   const entries = await db.fuelEntry.findMany({
     where,
-    include: { vehicle: true, driver: true },
+    select: {
+      id: true, date: true, vehicleId: true, driverId: true, odometer: true,
+      previousOdometer: true, distance: true, liters: true, pricePerLiter: true,
+      totalCost: true, fuelStation: true, invoiceNumber: true, paymentMethod: true,
+      notes: true, kmPerLiter: true, costPerKm: true,
+      vehicle: { select: { vehicleNumber: true } }, driver: { select: { name: true } },
+    },
     orderBy: { date: 'desc' },
-    take: limit,
+    take: limit + 1,
+    skip,
   })
-  return NextResponse.json({ entries })
+  const hasMore = entries.length > limit
+  const page = entries.slice(0, limit)
+  const receiptRows = page.length
+    ? await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM "FuelEntry"
+        WHERE "id" IN (${Prisma.join(page.map(entry => entry.id))}) AND "receiptImage" IS NOT NULL
+      `)
+    : []
+  const receiptIds = new Set(receiptRows.map(row => row.id))
+  return NextResponse.json({ entries: page.map(entry => ({ ...entry, hasReceipt: receiptIds.has(entry.id) })), hasMore, offset: skip, limit })
 }
 
 export async function POST(req: NextRequest) {
@@ -99,7 +119,10 @@ export async function POST(req: NextRequest) {
       kmPerLiter, costPerKm,
       userId: user.id,
     },
-    include: { vehicle: true, driver: true },
+    select: {
+      id: true, vehicleId: true, date: true, totalCost: true,
+      vehicle: { select: { vehicleNumber: true } },
+    },
   })
 
   // Update vehicle current odometer if this is the highest reading

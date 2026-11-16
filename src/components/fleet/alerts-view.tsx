@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { api, ALERT_SEVERITY_COLORS } from '@/lib/fleet'
 import { useUI } from '@/lib/store'
 import { Bell, AlertTriangle, ShieldAlert, Info, RefreshCw, Car, Calendar, Fuel, Wrench, Battery, Gauge, MapPin } from 'lucide-react'
+import { LoadError } from './load-error'
 
 const TYPE_ICONS: Record<string, typeof Bell> = {
   INSURANCE_EXPIRED: ShieldAlert,
@@ -34,17 +35,19 @@ export function AlertsView() {
   const { setView } = useUI()
   const [data, setData] = useState<{ alerts: any[]; counts: any } | null>(null)
   const [filter, setFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all')
+  const [error, setError] = useState('')
 
-  const load = () => api('/api/alerts').then(setData)
+  const load = () => { setError(''); return api('/api/alerts').then(setData).catch((e: any) => setError(e.message || 'Please check your connection.')) }
   useEffect(() => { load() }, [])
 
   const filtered = data ? (filter === 'all' ? data.alerts : data.alerts.filter(a => a.severity === filter)) : []
 
   return (
     <div className="space-y-4">
+      {error && <LoadError message={error} onRetry={load} />}
       {/* Summary cards */}
       {data && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Card className="border-rose-200 dark:border-rose-900">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="size-10 rounded-lg bg-rose-500/10 text-rose-600 grid place-items-center"><AlertTriangle className="size-5" /></div>

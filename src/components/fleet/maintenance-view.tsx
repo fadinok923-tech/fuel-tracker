@@ -13,6 +13,7 @@ import { PERMISSIONS } from '@/lib/types'
 import { api, fmtCurrency, fmtDate, MAINT_TYPE_LABELS } from '@/lib/fleet'
 import { Wrench, Plus, Edit, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { LoadError } from './load-error'
 
 const TYPES = Object.keys(MAINT_TYPE_LABELS)
 const today = () => new Date().toISOString().split('T')[0]
@@ -39,6 +40,8 @@ export function MaintenanceView() {
   const [items, setItems] = useState<any[]>([])
   const [vehicles, setVehicles] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [filterType, setFilterType] = useState<string>('all')
@@ -46,13 +49,22 @@ export function MaintenanceView() {
     date: today(), vehicleId: '', expenseType: 'OIL_CHANGE', amount: '', workshop: '', invoiceNumber: '', notes: '', invoiceImage: '',
   })
 
-  const load = async () => {
+  const load = async (offset = 0) => {
     setLoading(true)
-    const [m, v] = await Promise.all([api('/api/maintenance'), api('/api/vehicles')])
-    setItems(m.items); setVehicles(v.vehicles); setLoading(false)
-    if (user?.role === 'DRIVER' && v.vehicles[0]) {
-      setForm((current: any) => ({ ...current, vehicleId: v.vehicles[0].id }))
-    }
+    setLoadError('')
+    try {
+      let m: any
+      let v: any
+      if (offset === 0) [m, v] = await Promise.all([api('/api/maintenance?limit=100&offset=0'), api('/api/vehicles')])
+      else m = await api(`/api/maintenance?limit=100&offset=${offset}`)
+      setItems(current => offset ? [...current, ...m.items] : m.items)
+      setHasMore(m.hasMore)
+      if (offset === 0) {
+        setVehicles(v.vehicles)
+        if (user?.role === 'DRIVER' && v.vehicles[0]) setForm((current: any) => ({ ...current, vehicleId: v.vehicles[0].id }))
+      }
+    } catch (e: any) { setLoadError(e.message || 'Please check your connection.'); toast.error(`Could not load maintenance: ${e.message}`) }
+    finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
 
@@ -71,7 +83,10 @@ export function MaintenanceView() {
   const save = async () => {
     try {
       if (!form.vehicleId || !form.amount) { toast.error('Vehicle and amount required'); return }
-      const payload = { ...form, amount: Number(form.amount), userId: user?.id }
+      const payloadData: any = { ...form }
+      delete payloadData.hasInvoiceImage
+      delete payloadData.invoiceImage
+      const payload = { ...payloadData, ...(form.invoiceImage ? { invoiceImage: form.invoiceImage } : {}), amount: Number(form.amount), userId: user?.id }
       if (editing) {
         await api(`/api/maintenance/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) })
         toast.success('Maintenance updated')
@@ -110,6 +125,8 @@ export function MaintenanceView() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading…</div>
+          ) : loadError ? (
+            <LoadError message={loadError} onRetry={() => load()} />
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground"><Wrench className="size-12 mx-auto mb-2 opacity-30" /> {isDriver ? 'No maintenance entries from you yet' : 'No records found'}</div>
           ) : (
@@ -156,10 +173,12 @@ export function MaintenanceView() {
         </CardContent>
       </Card>
 
+      {hasMore && <div className="flex justify-center"><Button variant="outline" onClick={() => load(items.length)} disabled={loading}>{loading ? 'Loading…' : 'Load more maintenance'}</Button></div>}
+
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader><DialogTitle>{isDriver ? 'Report Maintenance Entry' : editing ? 'Edit Maintenance' : 'Add Maintenance Record'}</DialogTitle></DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5"><Label className="text-xs">Date</Label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             {isDriver ? <div className="space-y-1.5"><Label className="text-xs">Assigned Vehicle</Label><Input value={vehicles.find(v => v.id === form.vehicleId)?.vehicleNumber || 'No vehicle assigned'} readOnly /></div> : <div className="space-y-1.5"><Label className="text-xs">Vehicle *</Label>
               <Select value={form.vehicleId} onValueChange={v => setForm({ ...form, vehicleId: v })}>
@@ -176,7 +195,7 @@ export function MaintenanceView() {
             <div className="space-y-1.5"><Label className="text-xs">Amount (SAR) *</Label><Input type="number" step="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Workshop</Label><Input value={form.workshop} onChange={e => setForm({ ...form, workshop: e.target.value })} /></div>
             <div className="space-y-1.5"><Label className="text-xs">Invoice Number</Label><Input value={form.invoiceNumber} onChange={e => setForm({ ...form, invoiceNumber: e.target.value })} /></div>
-            <div className="space-y-1.5 col-span-2"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+            <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
