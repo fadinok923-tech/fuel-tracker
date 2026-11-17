@@ -55,7 +55,7 @@ export function DriverQuickView() {
 
   // Fuel form
   const [fuelForm, setFuelForm] = useState<any>({
-    date: today(), vehicleId: '', driverId: '', odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', paymentMethod: 'FLEET_CARD', receiptImage: '',
+    date: today(), vehicleId: '', driverId: '', odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', paymentMethod: 'CASH', receiptImage: '',
   })
   // Trip form
   const [tripForm, setTripForm] = useState<any>({
@@ -162,7 +162,7 @@ export function DriverQuickView() {
     try {
       await api('/api/fuel', { method: 'POST', body: JSON.stringify({ ...fuelForm, liters: fuelCalc.liters, totalCost: fuelCalc.total, userId: user?.id }) })
       toast.success(`Fuel logged · ${fmtCurrency(fuelCalc.total)}`)
-      setFuelForm((current: any) => ({ ...current, odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', notes: '', receiptImage: '', paymentMethod: 'FLEET_CARD' }))
+      setFuelForm((current: any) => ({ ...current, odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', notes: '', receiptImage: '', paymentMethod: 'CASH' }))
       setReceiptName('')
       setScanNotes([])
       setScanSummary(null)
