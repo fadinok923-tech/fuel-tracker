@@ -1,4 +1,4 @@
-const CACHE_NAME = "tanoor-fleet-static-v2";
+const CACHE_NAME = "tanoor-fleet-static-v3";
 const STATIC_PATHS = ["/manifest.webmanifest", "/offline.html", "/icons/tanoor-180.png", "/icons/tanoor-192.png", "/icons/tanoor-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -28,7 +28,9 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  const isStaticAsset = STATIC_PATHS.includes(url.pathname) || url.pathname.startsWith("/_next/static/");
+  // Let the browser fetch Next.js chunks directly. Serving old app chunks from
+  // a service-worker cache can mix assets from different deployments on phones.
+  const isStaticAsset = STATIC_PATHS.includes(url.pathname);
   if (!isStaticAsset) {
     return;
   }
