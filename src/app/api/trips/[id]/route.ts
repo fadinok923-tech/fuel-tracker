@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { recalculateVehicleOdometer } from '@/lib/odometer'
 import { putAudit } from '@/lib/audit'
 import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
@@ -30,7 +31,11 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   data.endKm = e
   data.distance = e - s
 
-  const trip = await db.trip.update({ where: { id }, data, include: { vehicle: true, driver: true } })
+  const trip = await db.$transaction(async tx => {
+    const trip = await tx.trip.update({ where: { id }, data, include: { vehicle: true, driver: true } })
+    await recalculateVehicleOdometer(tx, existing.vehicleId)
+    return trip
+  })
   await putAudit({ userId: actor.id, action: 'UPDATE', entity: 'Trip', entityId: id, details: `Updated trip ${trip.distance} km` })
   return NextResponse.json({ trip })
 }
@@ -40,7 +45,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   if (!actor) return unauthorizedResponse()
   if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
-  await db.trip.update({ where: { id }, data: { deletedAt: new Date() } })
+  const existing = await db.trip.findUnique({ where: { id }, select: { vehicleId: true, deletedAt: true } })
+  if (!existing || existing.deletedAt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  await db.$transaction(async tx => {
+    await tx.trip.update({ where: { id }, data: { deletedAt: new Date() } })
+    await recalculateVehicleOdometer(tx, existing.vehicleId)
+  })
   await putAudit({ userId: actor.id, action: 'DELETE', entity: 'Trip', entityId: id, details: `Soft-deleted trip` })
   return NextResponse.json({ ok: true })
 }

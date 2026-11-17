@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { recalculateVehicleOdometer } from '@/lib/odometer'
 import { putAudit } from '@/lib/audit'
 import { forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
@@ -56,7 +57,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   data.kmPerLiter = distance > 0 ? +(distance / newLiters).toFixed(2) : null
   data.costPerKm = distance > 0 ? +(totalCost / distance).toFixed(3) : null
 
-  const entry = await db.fuelEntry.update({
+  const entry = await db.$transaction(async tx => {
+    const entry = await tx.fuelEntry.update({
     where: { id },
     data,
     select: {
@@ -66,15 +68,10 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       notes: true, kmPerLiter: true, costPerKm: true,
       vehicle: { select: { vehicleNumber: true } }, driver: { select: { name: true } },
     },
+    })
+    await recalculateVehicleOdometer(tx, existing.vehicleId)
+    return entry
   })
-
-  // Update vehicle odometer if needed
-  if (body.odometer !== undefined) {
-    const v = await db.vehicle.findUnique({ where: { id: existing.vehicleId } })
-    if (v && newOdo > v.currentOdometer) {
-      await db.vehicle.update({ where: { id: v.id }, data: { currentOdometer: newOdo } })
-    }
-  }
 
   await putAudit({ userId: actor.id, action: 'UPDATE', entity: 'FuelEntry', entityId: id, details: `Updated fuel entry` })
   return NextResponse.json({ entry })
@@ -85,7 +82,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   if (!actor) return unauthorizedResponse()
   if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
-  await db.fuelEntry.update({ where: { id }, data: { deletedAt: new Date() } })
+  const existing = await db.fuelEntry.findUnique({ where: { id }, select: { vehicleId: true, deletedAt: true } })
+  if (!existing || existing.deletedAt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  await db.$transaction(async tx => {
+    await tx.fuelEntry.update({ where: { id }, data: { deletedAt: new Date() } })
+    await recalculateVehicleOdometer(tx, existing.vehicleId)
+  })
   await putAudit({ userId: actor.id, action: 'DELETE', entity: 'FuelEntry', entityId: id, details: `Soft-deleted fuel entry` })
   return NextResponse.json({ ok: true })
 }
