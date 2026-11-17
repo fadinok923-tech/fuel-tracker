@@ -88,24 +88,28 @@ export async function GET(req: NextRequest) {
     const vFuel = fuelByVehicle.get(v.id) || []
     const vTrips = tripsByVehicle.get(v.id) || []
     const vMaint = maintenanceByVehicle.get(v.id) || []
-    const fuelCost = vFuel.reduce((s, f) => s + f.totalCost, 0)
+    const periodFuel = vFuel.filter(f => f.date >= selectedStart)
+    const periodMaintenance = vMaint.filter(m => m.date >= selectedStart)
+    const fuelCost = periodFuel.reduce((s, f) => s + f.totalCost, 0)
     const km = vTrips.filter(t => t.date >= selectedStart).reduce((s, t) => s + t.distance, 0)
-    const maintenanceCost = vMaint.filter(m => !['REPAIRS', 'UNEXPECTED', 'INSURANCE', 'REGISTRATION'].includes(m.expenseType)).reduce((s, m) => s + m.amount, 0)
-    const repairCost = vMaint.filter(m => ['REPAIRS', 'UNEXPECTED'].includes(m.expenseType)).reduce((s, m) => s + m.amount, 0)
-    const insuranceCost = vMaint.filter(m => m.expenseType === 'INSURANCE').reduce((s, m) => s + m.amount, 0)
-    const registrationCost = vMaint.filter(m => m.expenseType === 'REGISTRATION').reduce((s, m) => s + m.amount, 0)
+    const maintenanceCost = periodMaintenance.filter(m => !['REPAIRS', 'UNEXPECTED', 'INSURANCE', 'REGISTRATION'].includes(m.expenseType)).reduce((s, m) => s + m.amount, 0)
+    const repairCost = periodMaintenance.filter(m => ['REPAIRS', 'UNEXPECTED'].includes(m.expenseType)).reduce((s, m) => s + m.amount, 0)
+    const insuranceCost = periodMaintenance.filter(m => m.expenseType === 'INSURANCE').reduce((s, m) => s + m.amount, 0)
+    const registrationCost = periodMaintenance.filter(m => m.expenseType === 'REGISTRATION').reduce((s, m) => s + m.amount, 0)
     const totalCost = fuelCost + maintenanceCost + repairCost + insuranceCost + registrationCost
     const annualFuel = vFuel.reduce((s, f) => s + f.totalCost, 0)
     const annualMaintenance = vMaint.reduce((s, m) => s + m.amount, 0)
     const annualKm = vTrips.reduce((s, t) => s + t.distance, 0)
-    const validFuel = vFuel.filter(f => f.distance && f.distance > 0 && f.kmPerLiter)
-    const kmL = validFuel.length ? validFuel.reduce((s, f) => s + (f.kmPerLiter || 0), 0) / validFuel.length : 0
+    const validFuel = periodFuel.filter(f => f.distance && f.distance > 0 && f.liters > 0)
+    const measuredDistance = validFuel.reduce((sum, f) => sum + (f.distance || 0), 0)
+    const measuredLiters = validFuel.reduce((sum, f) => sum + f.liters, 0)
+    const kmL = measuredLiters > 0 ? measuredDistance / measuredLiters : 0
     return {
       id: v.id, vehicleNumber: v.vehicleNumber, vehicleName: v.vehicleName,
       fuelCost: money(fuelCost), maintenanceCost: money(maintenanceCost), repairCost: money(repairCost),
       insuranceCost: money(insuranceCost), registrationCost: money(registrationCost), totalCost: money(totalCost),
       annualCost: money(annualFuel + annualMaintenance), annualKm: Math.round(annualKm),
-      km: Math.round(km), liters: Number(vFuel.reduce((s, f) => s + f.liters, 0).toFixed(1)),
+      km: Math.round(km), liters: Number(periodFuel.reduce((s, f) => s + f.liters, 0).toFixed(1)),
       kmL: Number(kmL.toFixed(2)), costPerKm: km > 0 ? Number((totalCost / km).toFixed(3)) : 0,
     }
   })
@@ -113,8 +117,10 @@ export async function GET(req: NextRequest) {
   const driverComparison = drivers.map(d => {
     const dFuel = (fuelByDriver.get(d.id) || []).filter(f => f.date >= selectedStart)
     const dTrips = (tripsByDriver.get(d.id) || []).filter(t => t.date >= selectedStart)
-    const validFuel = dFuel.filter(f => f.distance && f.distance > 0 && f.kmPerLiter)
-    const kmL = validFuel.length ? validFuel.reduce((s, f) => s + (f.kmPerLiter || 0), 0) / validFuel.length : 0
+    const validFuel = dFuel.filter(f => f.distance && f.distance > 0 && f.liters > 0)
+    const measuredDistance = validFuel.reduce((sum, f) => sum + (f.distance || 0), 0)
+    const measuredLiters = validFuel.reduce((sum, f) => sum + f.liters, 0)
+    const kmL = measuredLiters > 0 ? measuredDistance / measuredLiters : 0
     return { driverName: d.name, vehicleNumber: d.assignedVehicle?.vehicleNumber || null, trips: dTrips.length, km: Math.round(dTrips.reduce((s, t) => s + t.distance, 0)), fuelCost: money(dFuel.reduce((s, f) => s + f.totalCost, 0)), kmL: Number(kmL.toFixed(2)) }
   })
 

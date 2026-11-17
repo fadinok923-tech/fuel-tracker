@@ -55,7 +55,7 @@ export function DriverQuickView() {
 
   // Fuel form
   const [fuelForm, setFuelForm] = useState<any>({
-    date: today(), vehicleId: '', driverId: '', odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', paymentMethod: 'FLEET_CARD', receiptImage: '',
+    date: today(), vehicleId: '', driverId: '', odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', paymentMethod: 'CASH', receiptImage: '',
   })
   // Trip form
   const [tripForm, setTripForm] = useState<any>({
@@ -162,7 +162,7 @@ export function DriverQuickView() {
     try {
       await api('/api/fuel', { method: 'POST', body: JSON.stringify({ ...fuelForm, liters: fuelCalc.liters, totalCost: fuelCalc.total, userId: user?.id }) })
       toast.success(`Fuel logged · ${fmtCurrency(fuelCalc.total)}`)
-      setFuelForm((current: any) => ({ ...current, odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', notes: '', receiptImage: '', paymentMethod: 'FLEET_CARD' }))
+      setFuelForm((current: any) => ({ ...current, odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', notes: '', receiptImage: '', paymentMethod: 'CASH' }))
       setReceiptName('')
       setScanNotes([])
       setScanSummary(null)
@@ -185,10 +185,10 @@ export function DriverQuickView() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="w-full min-w-0 space-y-6 max-w-4xl mx-auto">
       {loadError && <LoadError message={loadError} onRetry={load} />}
       <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-emerald-900/20 border-emerald-200 dark:border-emerald-900">
-        <CardContent className="p-5 flex items-center gap-4">
+        <CardContent className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4">
           <div className="size-12 rounded-xl bg-emerald-600 text-white grid place-items-center">
             <Zap className="size-6" />
           </div>
@@ -220,7 +220,7 @@ export function DriverQuickView() {
           <CardHeader><CardTitle className="text-base">Log Fuel Fill</CardTitle>
             <CardDescription>Scan a fuel bill to fill the details, then check them before saving.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="min-w-0 space-y-4 p-4 sm:p-6">
             <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
               <div className="flex items-start gap-3">
                 <div className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"><ScanLine className="size-4" /></div>
@@ -284,7 +284,7 @@ export function DriverQuickView() {
               <div className="space-y-1.5"><Label className="text-xs">Total Cost (SAR) *</Label><Input type="number" min="0" step="0.01" value={fuelForm.totalCost} onChange={e => setFuelForm({ ...fuelForm, totalCost: e.target.value })} placeholder="100.00" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Price / Liter (SAR) *</Label><Input type="number" min="0" step="0.0001" value={fuelForm.pricePerLiter} onChange={e => setFuelForm({ ...fuelForm, pricePerLiter: e.target.value })} placeholder="2.33" /></div>
               <div className="col-span-1 sm:col-span-2 -mt-2 text-xs text-muted-foreground">Liters are calculated automatically from total cost ÷ price per liter.</div>
-              <div className="space-y-1.5 col-span-2"><Label className="text-xs">Fuel Station (optional)</Label><Input value={fuelForm.fuelStation} onChange={e => setFuelForm({ ...fuelForm, fuelStation: e.target.value })} placeholder="Aramco - Olaya" /></div>
+              <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Fuel Station (optional)</Label><Input value={fuelForm.fuelStation} onChange={e => setFuelForm({ ...fuelForm, fuelStation: e.target.value })} placeholder="Aramco - Olaya" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Invoice Number</Label><Input value={fuelForm.invoiceNumber} onChange={e => setFuelForm({ ...fuelForm, invoiceNumber: e.target.value })} placeholder="From receipt" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Payment Method</Label>
                 <Select value={fuelForm.paymentMethod} onValueChange={v => setFuelForm({ ...fuelForm, paymentMethod: v })}>
@@ -294,7 +294,7 @@ export function DriverQuickView() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900">
               <div className="text-center">
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Distance</div>
                 <div className="text-lg font-bold font-mono">{fmtNumber(fuelCalc.dist)} km</div>
@@ -319,8 +319,8 @@ export function DriverQuickView() {
           <CardHeader><CardTitle className="text-base">Log Trip</CardTitle>
             <CardDescription>Just date, start KM, end KM — and we auto-calculate distance.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <CardContent className="min-w-0 space-y-4 p-4 sm:p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5"><Label className="text-xs">Date</Label><Input type="date" value={tripForm.date} onChange={e => setTripForm({ ...tripForm, date: e.target.value })} /></div>
               <div className="space-y-1.5"><Label className="text-xs">Vehicle</Label>
                 <Select value={tripForm.vehicleId} onValueChange={v => {
@@ -339,7 +339,7 @@ export function DriverQuickView() {
               <div className="space-y-1.5"><Label className="text-xs">End Location</Label><Input value={tripForm.endLocation} onChange={e => setTripForm({ ...tripForm, endLocation: e.target.value })} placeholder="Olaya" /></div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 p-4 rounded-lg bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 sm:p-4 rounded-lg bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900">
               <div className="text-center">
                 <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Distance</div>
                 <div className="text-2xl font-bold font-mono text-sky-700 dark:text-sky-400">{fmtNumber(tripCalc.distance)} km</div>
