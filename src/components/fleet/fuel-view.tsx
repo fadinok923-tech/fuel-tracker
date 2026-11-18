@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +26,8 @@ export function FuelView() {
   const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER'
 
   const [entries, setEntries] = useState<any[]>([])
+  const [filters, setFilters] = useState({ vehicleId: 'all', driverId: 'all', paymentMethod: 'all', from: '', to: '' })
+  const requestSequence = useRef(0)
   const [vehicles, setVehicles] = useState<any[]>([])
   const [drivers, setDrivers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -39,25 +41,37 @@ export function FuelView() {
   })
 
   const load = async (offset = 0) => {
+    const requestId = offset === 0 ? ++requestSequence.current : requestSequence.current
     setLoading(true)
     setLoadError('')
     try {
+      const params = new URLSearchParams({ limit: '100', offset: String(offset) })
+      if (filters.vehicleId !== 'all') params.set('vehicleId', filters.vehicleId)
+      if (filters.driverId !== 'all') params.set('driverId', filters.driverId)
+      if (filters.paymentMethod !== 'all') params.set('paymentMethod', filters.paymentMethod)
+      if (filters.from) params.set('from', filters.from)
+      if (filters.to) params.set('to', filters.to)
+      const fuelRequest = api(`/api/fuel?${params.toString()}`)
       let f: any
       let v: any
       let d: any
-      if (offset === 0) [f, v, d] = await Promise.all([api('/api/fuel?limit=100&offset=0'), api('/api/vehicles'), api('/api/drivers')])
-      else f = await api(`/api/fuel?limit=100&offset=${offset}`)
+      if (offset === 0) [f, v, d] = await Promise.all([fuelRequest, api('/api/vehicles'), api('/api/drivers')])
+      else f = await fuelRequest
+      if (requestId !== requestSequence.current) return
       setEntries(current => offset ? [...current, ...f.entries] : f.entries)
       setHasMore(f.hasMore)
       if (offset === 0) {
         setVehicles(v.vehicles); setDrivers(d.drivers)
       }
     } catch (e: any) {
+      if (requestId !== requestSequence.current) return
       setLoadError(e.message || 'Please check your connection.')
       toast.error(`Could not load fuel entries: ${e.message}`)
-    } finally { setLoading(false) }
+    } finally {
+      if (requestId === requestSequence.current) setLoading(false)
+    }
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(0) }, [filters])
 
   const filtered = entries.filter(e => {
     if (!searchQuery) return true
@@ -142,8 +156,67 @@ export function FuelView() {
         <StatCard icon={TrendingUp} label="Avg KM/L" value={`${fmtNumber(avgKmL, 2)}`} color="violet" />
       </div>
 
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">Filter fuel entries</div>
+              <div className="text-xs text-muted-foreground">Choose a vehicle, driver, payment method, or date range.</div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={filters.vehicleId === 'all' && filters.driverId === 'all' && filters.paymentMethod === 'all' && !filters.from && !filters.to}
+              onClick={() => setFilters({ vehicleId: 'all', driverId: 'all', paymentMethod: 'all', from: '', to: '' })}
+            >
+              Clear filters
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Vehicle</Label>
+              <Select value={filters.vehicleId} onValueChange={vehicleId => setFilters(current => ({ ...current, vehicleId }))}>
+                <SelectTrigger><SelectValue placeholder="All vehicles" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All vehicles</SelectItem>
+                  {vehicles.map(vehicle => <SelectItem key={vehicle.id} value={vehicle.id}>{vehicle.vehicleNumber}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Driver</Label>
+              <Select value={filters.driverId} onValueChange={driverId => setFilters(current => ({ ...current, driverId }))}>
+                <SelectTrigger><SelectValue placeholder="All drivers" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All drivers</SelectItem>
+                  {drivers.map(driver => <SelectItem key={driver.id} value={driver.id}>{driver.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Payment method</Label>
+              <Select value={filters.paymentMethod} onValueChange={paymentMethod => setFilters(current => ({ ...current, paymentMethod }))}>
+                <SelectTrigger><SelectValue placeholder="All methods" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All methods</SelectItem>
+                  {PAYMENT_METHODS.map(method => <SelectItem key={method} value={method}>{method.replace('_', ' ')}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs" htmlFor="fuel-filter-from">From date</Label>
+              <Input id="fuel-filter-from" type="date" max={filters.to || undefined} value={filters.from} onChange={event => setFilters(current => ({ ...current, from: event.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs" htmlFor="fuel-filter-to">To date</Label>
+              <Input id="fuel-filter-to" type="date" min={filters.from || undefined} value={filters.to} onChange={event => setFilters(current => ({ ...current, to: event.target.value }))} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex items-center justify-between gap-3">
-        <Badge variant="outline" className="bg-muted/40">{filtered.length} entries</Badge>
+        <Badge variant="outline" className="bg-muted/40">{filtered.length}{hasMore ? '+' : ''} entries</Badge>
         {canCreate && (
           <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700">
             <Plus className="size-4 mr-1" /> Add Fuel Entry
