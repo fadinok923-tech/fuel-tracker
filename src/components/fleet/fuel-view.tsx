@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth, useUI } from '@/lib/store'
 import { PERMISSIONS } from '@/lib/types'
-import { api, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
+import { api, createFuelEntryWithConfirmation, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
 import { Fuel, Plus, Edit, Trash2, Gauge, TrendingUp, Receipt, ScanLine } from 'lucide-react'
 import { toast } from 'sonner'
 import { LoadError } from './load-error'
@@ -109,7 +109,8 @@ export function FuelView() {
         await api(`/api/fuel/${editing.id}`, { method: 'PUT', body: JSON.stringify(payload) })
         toast.success('Fuel entry updated')
       } else {
-        await api('/api/fuel', { method: 'POST', body: JSON.stringify(payload) })
+        const created = await createFuelEntryWithConfirmation(payload)
+        if (!created) return
         toast.success(`Fuel entry added · ${computed.total.toFixed(2)} SAR`)
       }
       setModalOpen(false); load()
