@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       vehicle: { select: { vehicleNumber: true } },
     },
   })
-  const duplicate = sameDayEntries.find(entry =>
+  const exactDuplicates = sameDayEntries.filter(entry =>
     entry.driverId === (driverId || null) &&
     sameDay(entry.date, entryDate) &&
     sameNumber(entry.liters, Number(liters)) &&
@@ -111,6 +111,7 @@ export async function POST(req: NextRequest) {
     entry.paymentMethod === (paymentMethod || 'CASH') &&
     sameText(entry.notes, notes),
   )
+  const duplicate = exactDuplicates[0]
 
   if (duplicate && body.confirmDuplicate !== true) {
     return NextResponse.json({
@@ -123,7 +124,7 @@ export async function POST(req: NextRequest) {
   if (invoice) {
     const duplicateInvoice = await db.fuelEntry.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
     const maintenanceDuplicate = await db.maintenance.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
-    const invoiceMatchesOtherEntry = duplicateInvoice && (!duplicate || duplicateInvoice.id !== duplicate.id)
+    const invoiceMatchesOtherEntry = duplicateInvoice && !exactDuplicates.some(entry => entry.id === duplicateInvoice.id)
     if (invoiceMatchesOtherEntry || maintenanceDuplicate) {
       return NextResponse.json({ error: 'This invoice number has already been recorded' }, { status: 409 })
     }
