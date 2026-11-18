@@ -79,10 +79,55 @@ export async function POST(req: NextRequest) {
 
   if (!canAccessVehicle(user, vehicleId)) return forbiddenResponse()
   const invoice = String(invoiceNumber || '').trim()
+  const totalCost = +(Number(liters) * Number(pricePerLiter)).toFixed(2)
+  const entryDate = date ? new Date(date) : new Date()
+  const dayStart = new Date(Date.UTC(entryDate.getUTCFullYear(), entryDate.getUTCMonth(), entryDate.getUTCDate()))
+  const nextDay = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+  const sameText = (a: unknown, b: unknown, insensitive = false) => {
+    const left = String(a || '').trim()
+    const right = String(b || '').trim()
+    return insensitive ? left.toLocaleLowerCase('en-US') === right.toLocaleLowerCase('en-US') : left === right
+  }
+  const sameNumber = (a: number | null, b: number) => a != null && Math.abs(a - b) < 0.000001
+  const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10)
+
+  const sameDayEntries = await db.fuelEntry.findMany({
+    where: { vehicleId, odometer: Number(odometer), date: { gte: dayStart, lt: nextDay }, deletedAt: null },
+    select: {
+      id: true, date: true, vehicleId: true, driverId: true, odometer: true,
+      liters: true, pricePerLiter: true, totalCost: true, fuelStation: true,
+      invoiceNumber: true, paymentMethod: true, notes: true,
+      vehicle: { select: { vehicleNumber: true } },
+    },
+  })
+  const exactDuplicates = sameDayEntries.filter(entry =>
+    entry.driverId === (driverId || null) &&
+    sameDay(entry.date, entryDate) &&
+    sameNumber(entry.liters, Number(liters)) &&
+    sameNumber(entry.pricePerLiter, Number(pricePerLiter)) &&
+    sameNumber(entry.totalCost, totalCost) &&
+    sameText(entry.fuelStation, fuelStation, true) &&
+    sameText(entry.invoiceNumber, invoice, true) &&
+    entry.paymentMethod === (paymentMethod || 'CASH') &&
+    sameText(entry.notes, notes),
+  )
+  const duplicate = exactDuplicates[0]
+
+  if (duplicate && body.confirmDuplicate !== true) {
+    return NextResponse.json({
+      error: 'An identical fuel entry already exists. Confirm if you want to record it again.',
+      duplicateConfirmationRequired: true,
+      duplicate: { vehicleNumber: duplicate.vehicle.vehicleNumber, date: duplicate.date, liters: duplicate.liters, totalCost: duplicate.totalCost, odometer: duplicate.odometer },
+    }, { status: 409 })
+  }
+
   if (invoice) {
-    const duplicate = await db.fuelEntry.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
+    const duplicateInvoice = await db.fuelEntry.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
     const maintenanceDuplicate = await db.maintenance.findFirst({ where: { invoiceNumber: { equals: invoice, mode: 'insensitive' }, deletedAt: null } })
-    if (duplicate || maintenanceDuplicate) return NextResponse.json({ error: 'This invoice number has already been recorded' }, { status: 409 })
+    const invoiceMatchesOtherEntry = duplicateInvoice && !exactDuplicates.some(entry => entry.id === duplicateInvoice.id)
+    if (invoiceMatchesOtherEntry || maintenanceDuplicate) {
+      return NextResponse.json({ error: 'This invoice number has already been recorded' }, { status: 409 })
+    }
   }
 
   // Find previous fuel entry for this vehicle (most recent by odometer OR date)
@@ -99,13 +144,12 @@ export async function POST(req: NextRequest) {
   if (distance < 0) {
     return NextResponse.json({ error: `Odometer reading cannot be less than previous reading (${prevOdo} km)` }, { status: 400 })
   }
-  const totalCost = +(Number(liters) * Number(pricePerLiter)).toFixed(2)
   const kmPerLiter = distance > 0 ? +(distance / Number(liters)).toFixed(2) : null
   const costPerKm = distance > 0 ? +(totalCost / distance).toFixed(3) : null
 
   const entry = await db.fuelEntry.create({
     data: {
-      date: date ? new Date(date) : new Date(),
+      date: entryDate,
       vehicleId, driverId: driverId || null,
       odometer: Number(odometer),
       previousOdometer: prevOdo,

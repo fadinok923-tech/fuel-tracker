@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { api, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
+import { api, createFuelEntryWithConfirmation, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
 import { useAuth } from '@/lib/store'
 import { Zap, Fuel, Route, Gauge, CheckCircle2, TrendingUp, History, ScanLine, Upload, Sparkles, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -160,7 +160,8 @@ export function DriverQuickView() {
       return
     }
     try {
-      await api('/api/fuel', { method: 'POST', body: JSON.stringify({ ...fuelForm, liters: fuelCalc.liters, totalCost: fuelCalc.total, userId: user?.id }) })
+      const created = await createFuelEntryWithConfirmation({ ...fuelForm, liters: fuelCalc.liters, totalCost: fuelCalc.total, userId: user?.id })
+      if (!created) return
       toast.success(`Fuel logged · ${fmtCurrency(fuelCalc.total)}`)
       setFuelForm((current: any) => ({ ...current, odometer: '', liters: '', pricePerLiter: '', totalCost: '', fuelStation: '', invoiceNumber: '', notes: '', receiptImage: '', paymentMethod: 'CASH' }))
       setReceiptName('')

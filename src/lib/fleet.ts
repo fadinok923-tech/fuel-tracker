@@ -47,9 +47,34 @@ export const api = async (url: string, opts: RequestInit = {}) => {
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.error || `HTTP ${res.status}`)
+    const error = new Error(body.error || `HTTP ${res.status}`) as Error & { status: number; body: any }
+    error.status = res.status
+    error.body = body
+    throw error
   }
   return res.json()
+}
+
+export const createFuelEntryWithConfirmation = async (payload: Record<string, any>) => {
+  const submit = (confirmDuplicate = false) => api('/api/fuel', {
+    method: 'POST',
+    body: JSON.stringify({ ...payload, ...(confirmDuplicate ? { confirmDuplicate: true } : {}) }),
+  })
+
+  try {
+    return await submit()
+  } catch (error: any) {
+    if (!error.body?.duplicateConfirmationRequired) throw error
+
+    const duplicate = error.body.duplicate
+    const date = duplicate?.date ? fmtDate(duplicate.date) : 'the same date'
+    const summary = duplicate
+      ? `\n\nVehicle: ${duplicate.vehicleNumber}\nDate: ${date}\nOdometer: ${fmtNumber(duplicate.odometer)} km\nFuel: ${fmtNumber(duplicate.liters, 3)} L\nTotal: ${fmtCurrency(duplicate.totalCost)}`
+      : ''
+    const confirmed = window.confirm(`This entry exactly matches a saved fuel entry.${summary}\n\nSave it again anyway?`)
+    if (!confirmed) return null
+    return submit(true)
+  }
 }
 
 export const VEHICLE_STATUS_COLORS: Record<string, string> = {
