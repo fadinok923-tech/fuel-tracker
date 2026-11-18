@@ -69,9 +69,9 @@ export const createFuelEntryWithConfirmation = async (payload: Record<string, an
     const duplicate = error.body.duplicate
     const date = duplicate?.date ? fmtDate(duplicate.date) : 'the same date'
     const summary = duplicate
-      ? `\\n\\nVehicle: ${duplicate.vehicleNumber}\\nDate: ${date}\\nOdometer: ${fmtNumber(duplicate.odometer)} km\\nFuel: ${fmtNumber(duplicate.liters, 3)} L\\nTotal: ${fmtCurrency(duplicate.totalCost)}`
+      ? `\n\nVehicle: ${duplicate.vehicleNumber}\nDate: ${date}\nOdometer: ${fmtNumber(duplicate.odometer)} km\nFuel: ${fmtNumber(duplicate.liters, 3)} L\nTotal: ${fmtCurrency(duplicate.totalCost)}`
       : ''
-    const confirmed = window.confirm(`This entry exactly matches a saved fuel entry.${summary}\\n\\nSave it again anyway?`)
+    const confirmed = window.confirm(`This entry exactly matches a saved fuel entry.${summary}\n\nSave it again anyway?`)
     if (!confirmed) return null
     return submit(true)
   }
