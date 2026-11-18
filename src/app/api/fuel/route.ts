@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const vehicleId = searchParams.get('vehicleId')
   const driverId = searchParams.get('driverId')
+  const paymentMethod = searchParams.get('paymentMethod')
   const from = searchParams.get('from')
   const to = searchParams.get('to')
   const requestedLimit = Number(searchParams.get('limit') || 100)
@@ -20,13 +21,20 @@ export async function GET(req: NextRequest) {
   const where: any = { deletedAt: null }
   if (vehicleId) where.vehicleId = vehicleId
   if (driverId) where.driverId = driverId
+  if (paymentMethod && ['CASH', 'CARD', 'BANK_TRANSFER', 'FLEET_CARD', 'UPI', 'OTHER'].includes(paymentMethod)) {
+    where.paymentMethod = paymentMethod
+  }
   if (user.role === 'DRIVER') {
     where.driverId = user.driverProfile!.id
   }
   if (from || to) {
     where.date = {}
     if (from) where.date.gte = new Date(from)
-    if (to) where.date.lte = new Date(to)
+    if (to) {
+      const endDate = new Date(to)
+      endDate.setUTCHours(23, 59, 59, 999)
+      where.date.lte = endDate
+    }
   }
 
   const entries = await db.fuelEntry.findMany({
