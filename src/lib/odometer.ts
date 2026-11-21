@@ -49,10 +49,10 @@ export async function recalculateFuelMetrics(tx: Prisma.TransactionClient, vehic
     ],
   })
 
-  let previousOdometer = entries[0]?.previousOdometer
-  if (previousOdometer == null || previousOdometer > (entries[0]?.odometer ?? 0)) {
-    previousOdometer = 0
-  }
+  const firstEntry = entries[0]
+  let previousOdometer: number = firstEntry?.previousOdometer != null && firstEntry.previousOdometer <= firstEntry.odometer
+    ? firstEntry.previousOdometer
+    : 0
 
   let updatedEntries = 0
   for (const [index, entry] of entries.entries()) {
