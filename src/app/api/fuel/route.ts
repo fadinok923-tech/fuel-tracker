@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { recalculateFuelMetrics, recalculateVehicleOdometer } from '@/lib/odometer'
 import { putAudit } from '@/lib/audit'
 import { canAccessVehicle, forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 
@@ -138,10 +139,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Find previous fuel entry for this vehicle (most recent by odometer OR date)
+  // Use the nearest lower or equal odometer reading for this vehicle, regardless of entry date or driver.
   const prev = await db.fuelEntry.findFirst({
-    where: { vehicleId, deletedAt: null, ...(user.role === 'DRIVER' ? { driverId: user.driverProfile!.id } : {}), odometer: { lte: Number(odometer) } },
-    orderBy: { date: 'desc' },
+    where: { vehicleId, deletedAt: null, odometer: { lte: Number(odometer) } },
+    orderBy: [{ odometer: 'desc' }, { date: 'desc' }, { createdAt: 'desc' }],
   })
   // Also check that odometer >= vehicle.currentOdometer (allow equal for first fill)
   const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId } })
@@ -155,32 +156,32 @@ export async function POST(req: NextRequest) {
   const kmPerLiter = distance > 0 ? +(distance / Number(liters)).toFixed(2) : null
   const costPerKm = distance > 0 ? +(totalCost / distance).toFixed(3) : null
 
-  const entry = await db.fuelEntry.create({
-    data: {
-      date: entryDate,
-      vehicleId, driverId: driverId || null,
-      odometer: Number(odometer),
-      previousOdometer: prevOdo,
-      distance,
-      liters: Number(liters),
-      pricePerLiter: Number(pricePerLiter),
-      totalCost,
-      fuelStation, invoiceNumber,
-      paymentMethod: paymentMethod || 'CASH',
-      notes, receiptImage,
-      kmPerLiter, costPerKm,
-      userId: user.id,
-    },
-    select: {
-      id: true, vehicleId: true, date: true, totalCost: true,
-      vehicle: { select: { vehicleNumber: true } },
-    },
+  const entry = await db.$transaction(async tx => {
+    const created = await tx.fuelEntry.create({
+      data: {
+        date: entryDate,
+        vehicleId, driverId: driverId || null,
+        odometer: Number(odometer),
+        previousOdometer: prevOdo,
+        distance,
+        liters: Number(liters),
+        pricePerLiter: Number(pricePerLiter),
+        totalCost,
+        fuelStation, invoiceNumber,
+        paymentMethod: paymentMethod || 'CASH',
+        notes, receiptImage,
+        kmPerLiter, costPerKm,
+        userId: user.id,
+      },
+      select: {
+        id: true, vehicleId: true, date: true, totalCost: true,
+        vehicle: { select: { vehicleNumber: true } },
+      },
+    })
+    await recalculateFuelMetrics(tx, vehicleId)
+    await recalculateVehicleOdometer(tx, vehicleId)
+    return created
   })
-
-  // Update vehicle current odometer if this is the highest reading
-  if (Number(odometer) > vehicle.currentOdometer) {
-    await db.vehicle.update({ where: { id: vehicleId }, data: { currentOdometer: Number(odometer) } })
-  }
 
   await putAudit({ userId: user.id, action: 'CREATE', entity: 'FuelEntry', entityId: entry.id, details: `Fuel entry for ${entry.vehicle?.vehicleNumber}: ${liters}L` })
   return NextResponse.json({ entry })
