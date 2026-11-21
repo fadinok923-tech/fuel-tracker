@@ -31,6 +31,7 @@ export function FuelView() {
   const [vehicles, setVehicles] = useState<any[]>([])
   const [drivers, setDrivers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [recalculatingMileage, setRecalculatingMileage] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -131,6 +132,22 @@ export function FuelView() {
     } catch (e: any) { toast.error(e.message) }
   }
 
+  const recalculateMileage = async () => {
+    if (!confirm('Recalculate distance, KM/L, and cost/KM from each vehicle’s odometer sequence? Fuel costs will not change.')) return
+    setRecalculatingMileage(true)
+    try {
+      const result = await api('/api/fuel/recalculate', { method: 'POST' })
+      toast.success(result.updatedEntries
+        ? `Mileage recalculated for ${result.updatedEntries} fuel entries across ${result.vehiclesProcessed} vehicles`
+        : 'Fuel mileage is already up to date')
+      await load(0)
+    } catch (error: any) {
+      toast.error(error.message || 'Could not recalculate fuel mileage')
+    } finally {
+      setRecalculatingMileage(false)
+    }
+  }
+
   const remove = async (e: any) => {
     if (!confirm('Delete this fuel entry?')) return
     await api(`/api/fuel/${e.id}?userId=${user?.id}`, { method: 'DELETE' })
@@ -215,13 +232,20 @@ export function FuelView() {
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Badge variant="outline" className="bg-muted/40">{filtered.length}{hasMore ? '+' : ''} entries</Badge>
-        {canCreate && (
-          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700">
-            <Plus className="size-4 mr-1" /> Add Fuel Entry
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {user?.role === 'ADMIN' && (
+            <Button variant="outline" onClick={recalculateMileage} disabled={recalculatingMileage}>
+              {recalculatingMileage ? 'Recalculating…' : 'Recalculate mileage'}
+            </Button>
+          )}
+          {canCreate && (
+            <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700">
+              <Plus className="size-4 mr-1" /> Add Fuel Entry
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>

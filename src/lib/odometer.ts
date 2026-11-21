@@ -24,3 +24,58 @@ export async function recalculateVehicleOdometer(tx: Prisma.TransactionClient, v
 
   return currentOdometer
 }
+
+
+export async function recalculateFuelMetrics(tx: Prisma.TransactionClient, vehicleId: string) {
+  const entries = await tx.fuelEntry.findMany({
+    where: { vehicleId, deletedAt: null },
+    select: {
+      id: true,
+      date: true,
+      createdAt: true,
+      odometer: true,
+      previousOdometer: true,
+      liters: true,
+      totalCost: true,
+      distance: true,
+      kmPerLiter: true,
+      costPerKm: true,
+    },
+    orderBy: [
+      { odometer: 'asc' },
+      { date: 'asc' },
+      { createdAt: 'asc' },
+      { id: 'asc' },
+    ],
+  })
+
+  const firstEntry = entries[0]
+  let previousOdometer: number = firstEntry?.previousOdometer != null && firstEntry.previousOdometer <= firstEntry.odometer
+    ? firstEntry.previousOdometer
+    : 0
+
+  let updatedEntries = 0
+  for (const [index, entry] of entries.entries()) {
+    if (index > 0) previousOdometer = entries[index - 1].odometer
+    const distance = Math.max(0, entry.odometer - previousOdometer)
+    const kmPerLiter = distance > 0 && entry.liters > 0 ? +(distance / entry.liters).toFixed(2) : null
+    const costPerKm = distance > 0 ? +(entry.totalCost / distance).toFixed(3) : null
+    const differs = (a: number | null, b: number | null) =>
+      a === null || b === null ? a !== b : Math.abs(a - b) > 0.000001
+
+    if (
+      differs(entry.previousOdometer, previousOdometer) ||
+      differs(entry.distance, distance) ||
+      differs(entry.kmPerLiter, kmPerLiter) ||
+      differs(entry.costPerKm, costPerKm)
+    ) {
+      await tx.fuelEntry.update({
+        where: { id: entry.id },
+        data: { previousOdometer, distance, kmPerLiter, costPerKm },
+      })
+      updatedEntries += 1
+    }
+  }
+
+  return updatedEntries
+}
