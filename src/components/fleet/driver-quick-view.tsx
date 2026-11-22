@@ -157,7 +157,7 @@ export function DriverQuickView() {
 
   const resetOilMeter = async () => {
     const odometer = Number(fuelForm.odometer)
-    if (!fuelForm.vehicleId || !Number.isFinite(odometer) || odometer < 0) {
+    if (!fuelForm.vehicleId || !String(fuelForm.odometer).trim() || !Number.isFinite(odometer) || odometer < 0) {
       toast.error('Enter the current odometer reading first')
       return
     }
