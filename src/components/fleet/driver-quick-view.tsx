@@ -48,6 +48,7 @@ export function DriverQuickView() {
   const [loadError, setLoadError] = useState('')
   const [tab, setTab] = useState<'fuel' | 'trip'>('fuel')
   const [scanning, setScanning] = useState(false)
+  const [oilMeterSaving, setOilMeterSaving] = useState(false)
   const [receiptName, setReceiptName] = useState('')
   const [scanNotes, setScanNotes] = useState<string[]>([])
   const [scanSummary, setScanSummary] = useState<any | null>(null)
@@ -151,6 +152,32 @@ export function DriverQuickView() {
       toast.error(error.message || 'Could not read this receipt')
     } finally {
       setScanning(false)
+    }
+  }
+
+  const resetOilMeter = async () => {
+    const odometer = Number(fuelForm.odometer)
+    if (!fuelForm.vehicleId || !Number.isFinite(odometer) || odometer < 0) {
+      toast.error('Enter the current odometer reading first')
+      return
+    }
+
+    const vehicle = vehicles.find(item => item.id === fuelForm.vehicleId)
+    const vehicleName = vehicle?.vehicleNumber || 'this vehicle'
+    if (!window.confirm(`Confirm the oil change for ${vehicleName} at ${fmtNumber(odometer)} km? This resets the oil-service reminder only; it will not reset the vehicle’s lifetime odometer.`)) return
+
+    setOilMeterSaving(true)
+    try {
+      await api(`/api/vehicles/${fuelForm.vehicleId}/oil-change`, {
+        method: 'POST',
+        body: JSON.stringify({ odometer }),
+      })
+      toast.success(`Oil-service reminder reset at ${fmtNumber(odometer)} km`)
+      load()
+    } catch (error: any) {
+      toast.error(error.message || 'Could not reset the oil-service reminder')
+    } finally {
+      setOilMeterSaving(false)
     }
   }
 
@@ -279,8 +306,17 @@ export function DriverQuickView() {
                   <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.vehicleNumber}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5 col-span-1 sm:col-span-2"><Label className="text-xs">Odometer Reading (km)</Label>
-                <Input type="number" value={fuelForm.odometer} onChange={e => setFuelForm({ ...fuelForm, odometer: e.target.value })} placeholder={`Previous: ${fuelCalc.prev}`} />
+              <div className="space-y-1.5 col-span-1 sm:col-span-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs" htmlFor="driver-fuel-odometer">Odometer Reading (km)</Label>
+                  {user?.role === 'DRIVER' && (
+                    <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={resetOilMeter} disabled={oilMeterSaving}>
+                      {oilMeterSaving ? 'Saving…' : 'Reset oil meter'}
+                    </Button>
+                  )}
+                </div>
+                <Input id="driver-fuel-odometer" type="number" min="0" value={fuelForm.odometer} onChange={e => setFuelForm({ ...fuelForm, odometer: e.target.value })} placeholder={`Previous: ${fuelCalc.prev}`} />
+                <div className="text-[10px] text-muted-foreground">Resets the oil-service reminder at this reading; the lifetime odometer stays unchanged.</div>
               </div>
               <div className="space-y-1.5"><Label className="text-xs">Total Cost (SAR) *</Label><Input type="number" min="0" step="0.01" value={fuelForm.totalCost} onChange={e => setFuelForm({ ...fuelForm, totalCost: e.target.value })} placeholder="100.00" /></div>
               <div className="space-y-1.5"><Label className="text-xs">Price / Liter (SAR) *</Label><Input type="number" min="0" step="0.0001" value={fuelForm.pricePerLiter} onChange={e => setFuelForm({ ...fuelForm, pricePerLiter: e.target.value })} placeholder="2.33" /></div>
