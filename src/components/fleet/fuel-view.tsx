@@ -173,6 +173,7 @@ export function FuelView() {
         <StatCard icon={TrendingUp} label="Avg KM/L" value={`${fmtNumber(avgKmL, 2)}`} color="violet" />
       </div>
 
+      {user?.role !== 'DRIVER' && (
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="flex items-center justify-between gap-3">
@@ -231,6 +232,7 @@ export function FuelView() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Badge variant="outline" className="bg-muted/40">{filtered.length}{hasMore ? '+' : ''} entries</Badge>
