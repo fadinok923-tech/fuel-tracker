@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { putAudit } from '@/lib/audit'
 import { canAccessVehicle, forbiddenResponse, getRequestUser, isManager, unauthorizedResponse } from '@/lib/server-auth'
 import { validateTripReadings } from '@/lib/trip-validation'
+import { recalculateVehicleOdometer } from '@/lib/odometer'
 
 export async function GET(req: NextRequest) {
   const user = await getRequestUser(req)
@@ -73,24 +74,25 @@ export async function POST(req: NextRequest) {
   if (!readingCheck.valid) return NextResponse.json({ error: readingCheck.error }, { status: 400 })
   const distance = readingCheck.distance
 
-  const trip = await db.trip.create({
-    data: {
-      date: date ? new Date(date) : new Date(),
-      vehicleId, driverId: driverId || null,
-      startKm: s, endKm: e, distance,
-      purpose, customer, startLocation, endLocation,
-      timeOut: timeOut ? new Date(timeOut) : null,
-      timeIn: timeIn ? new Date(timeIn) : null,
-      notes, userId: user.id,
-    },
-    include: { vehicle: true, driver: true },
-  })
+  const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true, odometerCycle: true } })
+  if (!vehicle) return NextResponse.json({ error: 'Vehicle not found' }, { status: 404 })
 
-  // Update vehicle odometer if endKm > current
-  const v = await db.vehicle.findUnique({ where: { id: vehicleId } })
-  if (v && e > v.currentOdometer) {
-    await db.vehicle.update({ where: { id: vehicleId }, data: { currentOdometer: e } })
-  }
+  const trip = await db.$transaction(async tx => {
+    const created = await tx.trip.create({
+      data: {
+        date: date ? new Date(date) : new Date(),
+        vehicleId, driverId: driverId || null,
+        startKm: s, endKm: e, distance,
+        purpose, customer, startLocation, endLocation,
+        timeOut: timeOut ? new Date(timeOut) : null,
+        timeIn: timeIn ? new Date(timeIn) : null,
+        notes, userId: user.id, odometerCycle: vehicle.odometerCycle,
+      },
+      include: { vehicle: true, driver: true },
+    })
+    await recalculateVehicleOdometer(tx, vehicleId)
+    return created
+  })
 
   await putAudit({ userId: user.id, action: 'CREATE', entity: 'Trip', entityId: trip.id, details: `Trip for ${trip.vehicle?.vehicleNumber}: ${distance} km` })
   return NextResponse.json({ trip })
