@@ -1,13 +1,19 @@
 import type { Prisma } from '@prisma/client'
 
 export async function recalculateVehicleOdometer(tx: Prisma.TransactionClient, vehicleId: string) {
+  const vehicle = await tx.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { odometerCycle: true },
+  })
+  if (!vehicle) return 0
+
   const [fuel, trip] = await Promise.all([
     tx.fuelEntry.aggregate({
-      where: { vehicleId, deletedAt: null },
+      where: { vehicleId, odometerCycle: vehicle.odometerCycle, deletedAt: null },
       _max: { odometer: true },
     }),
     tx.trip.aggregate({
-      where: { vehicleId, deletedAt: null },
+      where: { vehicleId, odometerCycle: vehicle.odometerCycle, deletedAt: null },
       _max: { endKm: true },
     }),
   ])
@@ -25,10 +31,20 @@ export async function recalculateVehicleOdometer(tx: Prisma.TransactionClient, v
   return currentOdometer
 }
 
+export async function recalculateFuelMetrics(
+  tx: Prisma.TransactionClient,
+  vehicleId: string,
+  odometerCycle?: number,
+) {
+  const vehicle = await tx.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { odometerCycle: true },
+  })
+  if (!vehicle) return 0
+  const cycle = odometerCycle ?? vehicle.odometerCycle
 
-export async function recalculateFuelMetrics(tx: Prisma.TransactionClient, vehicleId: string) {
   const entries = await tx.fuelEntry.findMany({
-    where: { vehicleId, deletedAt: null },
+    where: { vehicleId, odometerCycle: cycle, deletedAt: null },
     select: {
       id: true,
       date: true,
@@ -50,9 +66,11 @@ export async function recalculateFuelMetrics(tx: Prisma.TransactionClient, vehic
   })
 
   const firstEntry = entries[0]
-  let previousOdometer: number = firstEntry?.previousOdometer != null && firstEntry.previousOdometer <= firstEntry.odometer
-    ? firstEntry.previousOdometer
-    : 0
+  let previousOdometer: number = cycle > 0
+    ? 0
+    : firstEntry?.previousOdometer != null && firstEntry.previousOdometer <= firstEntry.odometer
+      ? firstEntry.previousOdometer
+      : 0
 
   let updatedEntries = 0
   for (const [index, entry] of entries.entries()) {

@@ -86,10 +86,10 @@ export async function POST(req: NextRequest) {
   const v = await db.vehicle.findUnique({ where: { id: vehicleId } })
   if (v) {
     const update: any = {}
-    if (expenseType === 'OIL_CHANGE') update.lastOilChangeKm = v.currentOdometer
-    if (expenseType === 'TYRES') update.lastTyreChangeKm = v.currentOdometer
+    if (expenseType === 'OIL_CHANGE') update.lastOilChangeKm = v.odometerOffset + v.currentOdometer
+    if (expenseType === 'TYRES') update.lastTyreChangeKm = v.odometerOffset + v.currentOdometer
     if (expenseType === 'BATTERY') update.lastBatteryChange = new Date(date || Date.now())
-    if (expenseType === 'BRAKE_SERVICE') update.lastServiceKm = v.currentOdometer
+    if (expenseType === 'BRAKE_SERVICE') update.lastServiceKm = v.odometerOffset + v.currentOdometer
     // For INSURANCE / REGISTRATION, update corresponding expiry to +1 year from date
     if (expenseType === 'INSURANCE') {
       const d = new Date(date || Date.now()); d.setFullYear(d.getFullYear() + 1)

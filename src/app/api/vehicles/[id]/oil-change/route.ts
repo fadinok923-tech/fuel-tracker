@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     where: { id },
     data: {
       currentOdometer: Math.max(vehicle.currentOdometer, odometer),
-      lastOilChangeKm: odometer,
+      lastOilChangeKm: vehicle.odometerOffset + odometer,
     },
     select: { id: true, vehicleNumber: true, currentOdometer: true, lastOilChangeKm: true },
   })
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     action: 'UPDATE',
     entity: 'Vehicle',
     entityId: id,
-    details: `Oil-service reminder reset for ${vehicle.vehicleNumber} at ${odometer} km; lifetime odometer retained`,
+    details: `Oil-service reminder reset for ${vehicle.vehicleNumber} at ${vehicle.odometerOffset + odometer} lifetime km; lifetime odometer retained`,
   })
 
   return NextResponse.json({ vehicle: updated })
