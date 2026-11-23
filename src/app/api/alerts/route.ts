@@ -23,13 +23,14 @@ export async function GET(req: NextRequest) {
     select: {
       id: true, vehicleNumber: true, status: true, insuranceExpiry: true,
       registrationExpiry: true, lastOilChangeKm: true, oilChangeKmInterval: true,
-      currentOdometer: true, lastServiceKm: true, serviceKmInterval: true,
+      currentOdometer: true, odometerOffset: true, lastServiceKm: true, serviceKmInterval: true,
       lastTyreChangeKm: true, tyreKmInterval: true, lastBatteryChange: true,
       batteryIntervalDays: true,
     },
   })
 
   for (const v of vehicles) {
+    const lifetimeOdometer = v.odometerOffset + v.currentOdometer
     // Insurance expiry
     if (v.insuranceExpiry) {
       const days = Math.floor((v.insuranceExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
     }
     // Oil change due
     if (v.lastOilChangeKm != null && v.oilChangeKmInterval) {
-      const kmSince = v.currentOdometer - v.lastOilChangeKm
+      const kmSince = lifetimeOdometer - v.lastOilChangeKm
       if (kmSince >= v.oilChangeKmInterval) {
         alerts.push({ severity: 'critical', type: 'OIL_CHANGE_DUE', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} oil change overdue by ${(kmSince - v.oilChangeKmInterval).toFixed(0)} km` })
       } else if (v.oilChangeKmInterval - kmSince <= 500) {
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     }
     // Service due
     if (v.lastServiceKm != null && v.serviceKmInterval) {
-      const kmSince = v.currentOdometer - v.lastServiceKm
+      const kmSince = lifetimeOdometer - v.lastServiceKm
       if (kmSince >= v.serviceKmInterval) {
         alerts.push({ severity: 'critical', type: 'SERVICE_DUE', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} general service overdue by ${(kmSince - v.serviceKmInterval).toFixed(0)} km` })
       } else if (v.serviceKmInterval - kmSince <= 500) {
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
     }
     // Tyres due
     if (v.lastTyreChangeKm != null && v.tyreKmInterval) {
-      const kmSince = v.currentOdometer - v.lastTyreChangeKm
+      const kmSince = lifetimeOdometer - v.lastTyreChangeKm
       if (kmSince >= v.tyreKmInterval) {
         alerts.push({ severity: 'critical', type: 'TYRES_DUE', vehicleId: v.id, vehicleNumber: v.vehicleNumber, message: `${v.vehicleNumber} tyre replacement overdue by ${(kmSince - v.tyreKmInterval).toFixed(0)} km` })
       } else if (v.tyreKmInterval - kmSince <= 1000) {
