@@ -12,7 +12,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const body = await req.json()
   const existing = await db.fuelEntry.findUnique({
     where: { id },
-    select: { id: true, vehicleId: true, odometer: true, previousOdometer: true, liters: true, pricePerLiter: true, distance: true },
+    select: { id: true, vehicleId: true, odometerCycle: true, odometer: true, previousOdometer: true, liters: true, pricePerLiter: true, distance: true },
   })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -39,7 +39,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   if (body.odometer !== undefined) {
     const prev = await db.fuelEntry.findFirst({
-      where: { vehicleId: existing.vehicleId, deletedAt: null, id: { not: id }, odometer: { lte: newOdo } },
+      where: { vehicleId: existing.vehicleId, odometerCycle: existing.odometerCycle, deletedAt: null, id: { not: id }, odometer: { lte: newOdo } },
       orderBy: [{ odometer: 'desc' }, { date: 'desc' }, { createdAt: 'desc' }],
     })
     const prevOdo = prev ? prev.odometer : existing.previousOdometer ?? 0
@@ -69,7 +69,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       vehicle: { select: { vehicleNumber: true } }, driver: { select: { name: true } },
     },
     })
-    await recalculateFuelMetrics(tx, existing.vehicleId)
+    await recalculateFuelMetrics(tx, existing.vehicleId, existing.odometerCycle)
     await recalculateVehicleOdometer(tx, existing.vehicleId)
     return entry
   })
@@ -83,11 +83,11 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   if (!actor) return unauthorizedResponse()
   if (!isManager(actor)) return forbiddenResponse()
   const { id } = await ctx.params
-  const existing = await db.fuelEntry.findUnique({ where: { id }, select: { vehicleId: true, deletedAt: true } })
+  const existing = await db.fuelEntry.findUnique({ where: { id }, select: { vehicleId: true, odometerCycle: true, deletedAt: true } })
   if (!existing || existing.deletedAt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   await db.$transaction(async tx => {
     await tx.fuelEntry.update({ where: { id }, data: { deletedAt: new Date() } })
-    await recalculateFuelMetrics(tx, existing.vehicleId)
+    await recalculateFuelMetrics(tx, existing.vehicleId, existing.odometerCycle)
     await recalculateVehicleOdometer(tx, existing.vehicleId)
   })
   await putAudit({ userId: actor.id, action: 'DELETE', entity: 'FuelEntry', entityId: id, details: `Soft-deleted fuel entry` })
