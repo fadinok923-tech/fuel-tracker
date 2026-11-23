@@ -57,6 +57,8 @@ model Vehicle {
   purchaseDate    DateTime?
   purchasePrice   Float?
   currentOdometer Float    @default(0)
+  odometerOffset  Float    @default(0) // completed meter cycles, for lifetime mileage
+  odometerCycle   Int      @default(0)
   notes           String?
 
   // maintenance scheduling thresholds (km or days)
@@ -137,6 +139,7 @@ model FuelEntry {
   vehicleId       String
   driverId        String?
   odometer        Float    // current odometer reading
+  odometerCycle   Int      @default(0)
   previousOdometer Float?  // cached at creation time
   distance        Float?   // computed: odometer - previousOdometer
   liters          Float
@@ -183,6 +186,7 @@ model Trip {
   id          String   @id @default(cuid())
   date        DateTime @default(now())
   vehicleId   String
+  odometerCycle Int      @default(0)
   driverId    String?
   startKm     Float
   endKm       Float
