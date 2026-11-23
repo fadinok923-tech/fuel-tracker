@@ -87,6 +87,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (!canAccessVehicle(user, vehicleId)) return forbiddenResponse()
+  const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId } })
+  if (!vehicle || vehicle.deletedAt) return NextResponse.json({ error: 'Vehicle not found' }, { status: 404 })
   const invoice = String(invoiceNumber || '').trim()
   const totalCost = +(Number(liters) * Number(pricePerLiter)).toFixed(2)
   const entryDate = date ? new Date(date) : new Date()
@@ -101,7 +103,7 @@ export async function POST(req: NextRequest) {
   const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10)
 
   const sameDayEntries = await db.fuelEntry.findMany({
-    where: { vehicleId, odometer: Number(odometer), date: { gte: dayStart, lt: nextDay }, deletedAt: null },
+    where: { vehicleId, odometerCycle: vehicle.odometerCycle, odometer: Number(odometer), date: { gte: dayStart, lt: nextDay }, deletedAt: null },
     select: {
       id: true, date: true, vehicleId: true, driverId: true, odometer: true,
       liters: true, pricePerLiter: true, totalCost: true, fuelStation: true,
@@ -141,13 +143,10 @@ export async function POST(req: NextRequest) {
 
   // Use the nearest lower or equal odometer reading for this vehicle, regardless of entry date or driver.
   const prev = await db.fuelEntry.findFirst({
-    where: { vehicleId, deletedAt: null, odometer: { lte: Number(odometer) } },
+    where: { vehicleId, odometerCycle: vehicle.odometerCycle, deletedAt: null, odometer: { lte: Number(odometer) } },
     orderBy: [{ odometer: 'desc' }, { date: 'desc' }, { createdAt: 'desc' }],
   })
-  // Also check that odometer >= vehicle.currentOdometer (allow equal for first fill)
-  const vehicle = await db.vehicle.findUnique({ where: { id: vehicleId } })
-  if (!vehicle) return NextResponse.json({ error: 'Vehicle not found' }, { status: 404 })
-
+  // With no entry in the current cycle, start at the meter's current value.
   const prevOdo = prev ? prev.odometer : vehicle.currentOdometer
   const distance = Number(odometer) - prevOdo
   if (distance < 0) {
@@ -161,6 +160,7 @@ export async function POST(req: NextRequest) {
       data: {
         date: entryDate,
         vehicleId, driverId: driverId || null,
+        odometerCycle: vehicle.odometerCycle,
         odometer: Number(odometer),
         previousOdometer: prevOdo,
         distance,
@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
         vehicle: { select: { vehicleNumber: true } },
       },
     })
-    await recalculateFuelMetrics(tx, vehicleId)
+    await recalculateFuelMetrics(tx, vehicleId, vehicle.odometerCycle)
     await recalculateVehicleOdometer(tx, vehicleId)
     return created
   })
