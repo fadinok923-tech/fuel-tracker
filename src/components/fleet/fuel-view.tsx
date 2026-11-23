@@ -33,6 +33,8 @@ export function FuelView() {
   const [loading, setLoading] = useState(true)
   const [recalculatingMileage, setRecalculatingMileage] = useState(false)
   const [resettingOdometers, setResettingOdometers] = useState(false)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [resetDriverId, setResetDriverId] = useState('all')
   const [hasMore, setHasMore] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -150,16 +152,21 @@ export function FuelView() {
   }
 
   const resetDriverOdometers = async () => {
-    if (!confirm('Set the odometer to 0 for every vehicle assigned to an active driver? Past fuel and trip entries, expenses, and costs will stay in the history.')) return
     setResettingOdometers(true)
     try {
-      const result = await api('/api/vehicles/reset-driver-odometers', { method: 'POST' })
-      toast.success(result.vehiclesReset
-        ? `Odometers reset to 0 for ${result.vehiclesReset} driver vehicle${result.vehiclesReset === 1 ? '' : 's'}`
-        : 'No active driver vehicles were found')
+      const result = await api('/api/vehicles/reset-driver-odometers', {
+        method: 'POST',
+        body: JSON.stringify(resetDriverId === 'all' ? {} : { driverId: resetDriverId }),
+      })
+      toast.success(resetDriverId === 'all'
+        ? (result.vehiclesReset
+          ? `Odometers reset to 0 for ${result.vehiclesReset} driver vehicle${result.vehiclesReset === 1 ? '' : 's'}`
+          : 'No active driver vehicles were found')
+        : `Odometer reset to 0 for ${result.driverName}’s vehicle`)
+      setResetDialogOpen(false)
       await load(0)
     } catch (error: any) {
-      toast.error(error.message || 'Could not reset driver odometers')
+      toast.error(error.message || 'Could not reset odometer')
     } finally {
       setResettingOdometers(false)
     }
@@ -256,7 +263,7 @@ export function FuelView() {
         <div className="flex flex-wrap items-center gap-2">
           {user?.role === 'ADMIN' && (
             <>
-              <Button variant="outline" onClick={resetDriverOdometers} disabled={resettingOdometers}>
+              <Button variant="outline" onClick={() => { setResetDriverId('all'); setResetDialogOpen(true) }} disabled={resettingOdometers}>
                 <RotateCcw className="size-4 mr-1" />{resettingOdometers ? 'Resetting…' : 'Reset driver odometers'}
               </Button>
               <Button variant="outline" onClick={recalculateMileage} disabled={recalculatingMileage}>
@@ -395,6 +402,40 @@ export function FuelView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
             <Button onClick={save} className="bg-emerald-600 hover:bg-emerald-700">{editing ? 'Update' : 'Create'} Entry</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset odometer to zero</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Choose one driver to reset only their assigned vehicle, or select all active drivers. Past fuel and trip history, expenses, and costs will remain.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Driver</Label>
+              <Select value={resetDriverId} onValueChange={setResetDriverId}>
+                <SelectTrigger><SelectValue placeholder="Select driver" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All active drivers</SelectItem>
+                  {drivers.map(driver => <SelectItem key={driver.id} value={driver.id}>{driver.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-amber-700">
+              {resetDriverId === 'all'
+                ? 'This will set every active driver’s assigned vehicle odometer to 0.'
+                : `This will set ${drivers.find(driver => driver.id === resetDriverId)?.name || 'this driver'}’s assigned vehicle odometer to 0.`}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetDialogOpen(false)} disabled={resettingOdometers}>Cancel</Button>
+            <Button onClick={resetDriverOdometers} disabled={resettingOdometers} className="bg-rose-600 hover:bg-rose-700">
+              {resettingOdometers ? 'Resetting…' : 'Confirm reset'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
