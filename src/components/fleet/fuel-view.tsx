@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useAuth, useUI } from '@/lib/store'
 import { PERMISSIONS } from '@/lib/types'
 import { api, createFuelEntryWithConfirmation, fmtCurrency, fmtNumber, fmtDate } from '@/lib/fleet'
-import { Fuel, Plus, Edit, Trash2, Gauge, TrendingUp, Receipt, ScanLine } from 'lucide-react'
+import { Fuel, Plus, Edit, Trash2, Gauge, TrendingUp, Receipt, ScanLine, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { LoadError } from './load-error'
 
@@ -32,6 +32,7 @@ export function FuelView() {
   const [drivers, setDrivers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [recalculatingMileage, setRecalculatingMileage] = useState(false)
+  const [resettingOdometers, setResettingOdometers] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -148,6 +149,22 @@ export function FuelView() {
     }
   }
 
+  const resetDriverOdometers = async () => {
+    if (!confirm('Set the odometer to 0 for every vehicle assigned to an active driver? Past fuel and trip entries, expenses, and costs will stay in the history.')) return
+    setResettingOdometers(true)
+    try {
+      const result = await api('/api/vehicles/reset-driver-odometers', { method: 'POST' })
+      toast.success(result.vehiclesReset
+        ? `Odometers reset to 0 for ${result.vehiclesReset} driver vehicle${result.vehiclesReset === 1 ? '' : 's'}`
+        : 'No active driver vehicles were found')
+      await load(0)
+    } catch (error: any) {
+      toast.error(error.message || 'Could not reset driver odometers')
+    } finally {
+      setResettingOdometers(false)
+    }
+  }
+
   const remove = async (e: any) => {
     if (!confirm('Delete this fuel entry?')) return
     await api(`/api/fuel/${e.id}?userId=${user?.id}`, { method: 'DELETE' })
@@ -238,9 +255,14 @@ export function FuelView() {
         <Badge variant="outline" className="bg-muted/40">{filtered.length}{hasMore ? '+' : ''} entries</Badge>
         <div className="flex flex-wrap items-center gap-2">
           {user?.role === 'ADMIN' && (
-            <Button variant="outline" onClick={recalculateMileage} disabled={recalculatingMileage}>
-              {recalculatingMileage ? 'Recalculating…' : 'Recalculate mileage'}
-            </Button>
+            <>
+              <Button variant="outline" onClick={resetDriverOdometers} disabled={resettingOdometers}>
+                <RotateCcw className="size-4 mr-1" />{resettingOdometers ? 'Resetting…' : 'Reset driver odometers'}
+              </Button>
+              <Button variant="outline" onClick={recalculateMileage} disabled={recalculatingMileage}>
+                {recalculatingMileage ? 'Recalculating…' : 'Recalculate mileage'}
+              </Button>
+            </>
           )}
           {canCreate && (
             <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700">
